@@ -1,0 +1,454 @@
+/* ------------------------------------------------------------------
+   Power-Ups (services) — game windows over a platformer level.
+   Everything is scoped under .stage-services.
+   ------------------------------------------------------------------ */
+
+.stage-services .svc-probe {
+  position: absolute;
+  left: var(--gutter);
+  right: var(--gutter);
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---------------- columns + windows ---------------- */
+
+.stage-services .svc-col {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  width: min(468px, 38vw);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  pointer-events: none;
+  visibility: hidden;
+  transition: visibility 0s linear 0.16s;
+}
+.stage-services .svc-col.is-on {
+  visibility: visible;
+  transition-delay: 0s;
+}
+.stage-services .svc-win {
+  pointer-events: auto;
+  /* solid RPG window: nothing from the level shows through the copy */
+  background: rgba(11, 13, 20, 0.96);
+  max-height: 100%;
+  transform: scale(1, 0.04);
+  transform-origin: 50% 50%;
+  transition: transform 0.16s steps(4, end);
+}
+.stage-services .svc-col.is-on .svc-win {
+  transform: none;
+}
+/* notched corners on the window, like a 16-bit menu box */
+.stage-services .svc-win::before,
+.stage-services .svc-win::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--gold);
+  box-shadow: 0 0 0 2px var(--void);
+  pointer-events: none;
+}
+.stage-services .svc-win::before {
+  top: -6px;
+  left: -6px;
+}
+.stage-services .svc-win::after {
+  bottom: -6px;
+  right: -6px;
+}
+
+/* ---------------- READY? ---------------- */
+
+.stage-services .svc-ready {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  visibility: hidden;
+  white-space: nowrap;
+  will-change: transform;
+}
+.stage-services .svc-ready.is-on {
+  visibility: visible;
+}
+.stage-services .svc-ready-lv {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--void);
+  background: var(--gold);
+  padding: 4px 8px;
+  box-shadow: 3px 3px 0 var(--void);
+}
+.stage-services .svc-ready-go {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2.2rem, 4.4vw, 3.6rem);
+  line-height: 1;
+  color: var(--cream);
+  -webkit-text-stroke: 0.1em var(--void);
+  paint-order: stroke fill;
+  text-shadow: 0.08em 0.08em 0 var(--void);
+  animation: svc-blink 1.1s steps(1, end) infinite;
+}
+@keyframes svc-blink {
+  70% {
+    opacity: 0;
+  }
+}
+
+/* ---------------- intro: title + inventory ---------------- */
+
+.stage-services .svc-intro-title {
+  font-size: clamp(2rem, 3.3vw, 3.25rem);
+  margin: 12px 0 16px;
+}
+.stage-services .svc-inv-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--gold);
+  padding-top: 12px;
+  border-top: 4px dotted var(--line-strong);
+  margin-bottom: 8px;
+}
+.stage-services .svc-inv {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 14px;
+}
+.stage-services .svc-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 2px 6px 2px 2px;
+  margin: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.stage-services .svc-slot img {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.stage-services .svc-slot-num {
+  color: var(--signal);
+}
+.stage-services .svc-slot-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stage-services .svc-slot:hover,
+.stage-services .svc-slot:focus-visible {
+  background: var(--indigo);
+}
+.stage-services .svc-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.stage-services .svc-hint-arrow {
+  width: 0;
+  height: 0;
+  border-top: 7px solid var(--signal);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  animation: svc-bob 0.9s steps(2, end) infinite;
+}
+@keyframes svc-bob {
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+/* ---------------- the item card ---------------- */
+
+.stage-services .svc-slides {
+  display: grid;
+}
+.stage-services .svc-slide {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.stage-services .svc-slide.is-on {
+  visibility: visible;
+}
+/* an outgoing title must not linger over the incoming one in the shared cell */
+.stage-services .svc-slide:not(.is-on) .rise-w {
+  visibility: hidden;
+  transition: none;
+}
+.stage-services .svc-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.stage-services .svc-count {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.stage-services .svc-count b {
+  font-weight: 400;
+  color: var(--signal);
+}
+.stage-services .svc-get {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--void);
+  background: var(--gold);
+  padding: 3px 7px;
+  box-shadow: 2px 2px 0 var(--void);
+}
+.stage-services .svc-slide-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.stage-services .svc-frame {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  background: var(--night);
+  box-shadow:
+    inset 0 0 0 4px var(--indigo),
+    inset 0 0 0 6px var(--void);
+}
+.stage-services .svc-frame img {
+  width: calc(var(--w, 16) * 4px);
+  height: auto;
+  image-rendering: pixelated;
+}
+.stage-services .svc-title {
+  font-size: clamp(1.7rem, 2.5vw, 2.55rem);
+  line-height: 1.02;
+}
+.stage-services .svc-blurb {
+  margin: 14px 0 14px;
+  max-width: none;
+  font-size: clamp(20px, 1.45vw, 23px);
+  line-height: 1.18;
+}
+.stage-services .svc-rest {
+  visibility: hidden;
+}
+.stage-services .svc-bar {
+  display: flex;
+  gap: 4px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 4px dotted var(--line-strong);
+}
+.stage-services .svc-pip {
+  flex: 1 1 0;
+  min-width: 24px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 2px solid var(--line-strong);
+  border-radius: 0;
+  cursor: pointer;
+  transition: transform 0.08s steps(2, end);
+}
+.stage-services .svc-pip:hover {
+  border-color: var(--cream);
+  color: var(--cream);
+}
+.stage-services .svc-pip.is-got {
+  background: var(--cream);
+  border-color: var(--cream);
+  color: var(--void);
+}
+.stage-services .svc-pip.is-cur {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--void);
+  transform: translateY(-3px);
+  box-shadow: 0 3px 0 var(--void);
+}
+
+/* ---------------- POWER UP! ---------------- */
+
+.stage-services .svc-power {
+  position: absolute;
+  left: var(--gutter);
+  right: var(--gutter);
+  top: var(--safe-top);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  visibility: hidden;
+}
+.stage-services .svc-power.is-on {
+  visibility: visible;
+}
+.stage-services .svc-power-title {
+  font-size: clamp(3rem, 8.4vw, 7.4rem);
+  -webkit-text-stroke: 0.08em var(--void);
+  paint-order: stroke fill;
+  text-shadow:
+    0.07em 0.07em 0 var(--void),
+    0.11em 0.11em 0 var(--magenta);
+  text-transform: uppercase;
+}
+.stage-services .svc-power.is-on .svc-power-title {
+  animation: svc-pop 0.42s steps(6, end) both;
+}
+@keyframes svc-pop {
+  0% {
+    transform: scale(0.2);
+  }
+  45% {
+    transform: scale(1.18);
+  }
+  75% {
+    transform: scale(0.96);
+  }
+  100% {
+    transform: none;
+  }
+}
+.stage-services .svc-power-sub {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--void);
+  background: var(--gold);
+  padding: 4px 9px;
+  box-shadow: 3px 3px 0 var(--void);
+}
+
+/* ---------------- portrait / narrow: scene on top, windows at the bottom ---------------- */
+
+@media (max-width: 767px), (max-aspect-ratio: 4/5) {
+  .stage-services .svc-col {
+    top: auto;
+    right: var(--gutter);
+    width: auto;
+    max-width: 560px;
+    margin: 0 auto;
+    justify-content: flex-end;
+    max-height: calc(100% - var(--safe-top) - var(--safe-bottom) - 150px);
+  }
+  .stage-services .svc-win {
+    padding: 14px 14px 12px;
+    transform-origin: 50% 100%;
+  }
+  .stage-services .svc-intro-title {
+    font-size: clamp(1.7rem, 7vw, 2.4rem);
+    margin: 8px 0 12px;
+  }
+  .stage-services .svc-inv {
+    gap: 0 10px;
+  }
+  .stage-services .svc-slot {
+    min-height: 26px;
+    gap: 6px;
+    font-size: 10px;
+  }
+  .stage-services .svc-slot img {
+    width: 24px;
+    height: 24px;
+  }
+  .stage-services .svc-hint {
+    display: none;
+  }
+  .stage-services .svc-card-head {
+    margin-bottom: 8px;
+  }
+  .stage-services .svc-slide-top {
+    gap: 12px;
+  }
+  .stage-services .svc-frame {
+    width: 58px;
+    height: 58px;
+    box-shadow:
+      inset 0 0 0 3px var(--indigo),
+      inset 0 0 0 5px var(--void);
+  }
+  .stage-services .svc-frame img {
+    width: calc(var(--w, 16) * 2.5px);
+  }
+  .stage-services .svc-title {
+    font-size: clamp(1.45rem, 6.2vw, 2rem);
+  }
+  .stage-services .svc-blurb {
+    margin: 10px 0;
+    font-size: 20px;
+    line-height: 1.12;
+  }
+  .stage-services .svc-bar {
+    gap: 3px;
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+  .stage-services .svc-pip {
+    height: 26px;
+    font-size: 9px;
+  }
+}
+
+/* short landscape and small phones: tags go, the card stays whole */
+@media (max-height: 700px) and (max-width: 767px), (max-height: 560px) {
+  .stage-services .svc-tags {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-services .svc-ready-go,
+  .stage-services .svc-hint-arrow,
+  .stage-services .svc-power.is-on .svc-power-title {
+    animation: none;
+  }
+}

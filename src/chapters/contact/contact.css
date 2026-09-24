@@ -1,0 +1,277 @@
+/* ------------------------------------------------------------------
+   CONTINUE? — the final level's game window (src/chapters/contact).
+   Everything is scoped under .stage-contact.
+   ------------------------------------------------------------------ */
+
+.stage-contact .ct-probe {
+  position: absolute;
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  left: var(--gutter);
+  right: var(--gutter);
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.stage-contact .ct-col {
+  position: absolute;
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  left: var(--gutter);
+  right: var(--gutter);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.stage-contact .ct-win {
+  width: clamp(340px, 38vw, 520px);
+  max-height: 100%;
+  padding: 18px 22px 20px;
+  visibility: hidden;
+}
+.stage-contact .ct-win.is-open {
+  visibility: visible;
+}
+
+.stage-contact .ct-eyebrow {
+  margin: 0;
+}
+
+.stage-contact .ct-title {
+  font-size: clamp(40px, 4.3vw, 66px);
+  margin: 10px 0 12px;
+  text-shadow:
+    0.06em 0.06em 0 var(--void),
+    0.1em 0.1em 0 var(--purple);
+}
+
+.stage-contact .ct-body {
+  max-width: none;
+  margin: 0 0 16px;
+  color: var(--cream);
+}
+
+/* ---- the buttons */
+
+.stage-contact .ct-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 12px 12px;
+}
+
+.stage-contact .ct-mail {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 3px;
+  padding: 10px 18px 11px 12px;
+  text-transform: none;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.stage-contact .ct-coin {
+  grid-row: 1 / span 2;
+  width: 27px;
+  height: 27px;
+  display: block;
+  filter: drop-shadow(2px 2px 0 rgba(11, 13, 20, 0.55));
+}
+.stage-contact .ct-mail-k {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.stage-contact .ct-mail-sep {
+  display: none;
+}
+.stage-contact .ct-mail-addr {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(21px, 1.75vw, 26px);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.stage-contact .ct-copy {
+  justify-content: center;
+  min-width: 8.6em;
+  flex: 0 0 auto;
+}
+.stage-contact .ct-copy-done,
+.stage-contact .ct-copy-fail,
+.stage-contact .ct-copy.is-copied .ct-copy-idle,
+.stage-contact .ct-copy.is-failed .ct-copy-idle {
+  display: none;
+}
+.stage-contact .ct-copy.is-copied .ct-copy-done,
+.stage-contact .ct-copy.is-failed .ct-copy-fail {
+  display: inline;
+}
+.stage-contact .ct-copy.is-copied {
+  background: var(--gold);
+}
+
+.stage-contact .ct-rule {
+  margin: 16px 0 12px;
+}
+
+/* ---- other games: a little game-select menu */
+
+.stage-contact .ct-games-k {
+  margin: 0;
+  color: var(--steel);
+}
+.stage-contact .ct-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+}
+.stage-contact .ct-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--cream);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  margin: 0 -5px;
+  padding: 8px 5px;
+  cursor: pointer;
+}
+.stage-contact .ct-link:hover,
+.stage-contact .ct-link:focus-visible {
+  color: var(--void);
+  background: var(--signal);
+  box-shadow: 3px 3px 0 var(--void);
+}
+.stage-contact .ct-ico {
+  width: 10.5px;
+  height: 10.5px;
+  display: block;
+  flex: none;
+  fill: currentColor;
+}
+.stage-contact .ct-ico--back {
+  width: 6px;
+}
+.stage-contact .ct-top {
+  color: var(--signal);
+}
+
+.stage-contact .ct-foot {
+  margin: 12px 0 0;
+  padding-right: 18px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.stage-contact .ct-nw {
+  white-space: nowrap;
+}
+
+/* the RPG "more…" cursor */
+.stage-contact .ct-more {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 7px solid var(--signal);
+  animation: hud-blink 1s steps(1, end) infinite;
+}
+
+/* ---- portrait: the window docks at the bottom, the game plays above it */
+
+.stage-contact.ct-portrait .ct-col {
+  align-items: flex-end;
+  justify-content: center;
+}
+.stage-contact.ct-portrait .ct-win {
+  width: 100%;
+  max-width: 560px;
+  padding: 16px 16px 16px;
+}
+.stage-contact.ct-portrait .ct-title {
+  font-size: clamp(36px, 9vw, 54px);
+  margin: 8px 0 10px;
+}
+.stage-contact.ct-portrait .ct-mail {
+  flex: 1 1 auto;
+}
+.stage-contact.ct-portrait .ct-cta {
+  gap: 10px;
+}
+
+/* compact (portrait, during the credits): the pitch folds away */
+.stage-contact.ct-compact .ct-body {
+  display: none;
+}
+
+/* short viewports: step the window down until it fits */
+.stage-contact.ct-fit-1 .ct-win {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+.stage-contact.ct-fit-1 .ct-title {
+  margin: 6px 0 8px;
+}
+.stage-contact.ct-fit-1 .ct-body {
+  margin-bottom: 12px;
+}
+.stage-contact.ct-fit-1 .ct-rule {
+  margin: 12px 0 8px;
+}
+.stage-contact.ct-fit-2 .ct-title {
+  font-size: 34px;
+}
+.stage-contact.ct-fit-2 .ct-body {
+  font-size: 20px;
+  line-height: 1.08;
+}
+.stage-contact.ct-fit-2 .ct-link {
+  padding: 6px 5px;
+}
+.stage-contact.ct-fit-3 .ct-mail {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.stage-contact.ct-fit-3 .ct-foot {
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.stage-contact.ct-fit-3 .ct-rule {
+  margin: 10px 0 6px;
+}
+.stage-contact.ct-fit-4 .ct-title {
+  font-size: 30px;
+}
+.stage-contact.ct-fit-4 .ct-foot {
+  font-size: 9.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-contact .ct-more {
+    animation: none;
+  }
+}

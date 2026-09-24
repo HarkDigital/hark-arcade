@@ -1,0 +1,586 @@
+/* ------------------------------------------------------------------
+   BOSS FIGHT (shield chapter). Everything scoped under .stage-shield.
+   Fighting-game HP row, a column of game windows that change with the
+   fight, WARNING! / YOU WIN! banners over the arena.
+   ------------------------------------------------------------------ */
+
+.stage-shield .bf {
+  position: absolute;
+  inset: 0;
+  --hp-h: 52px;
+  --ax: 70vw;
+  --ay: 30vh;
+  --aw: 50vw;
+  --ah: 50vh;
+}
+
+.stage-shield .bf-probe {
+  position: absolute;
+  left: var(--gutter);
+  right: var(--gutter);
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- HP row */
+
+.stage-shield .bf-hp {
+  position: absolute;
+  top: var(--safe-top);
+  left: var(--gutter);
+  right: var(--gutter);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  column-gap: clamp(12px, 2.2vw, 32px);
+  visibility: hidden;
+  transform: translate3d(0, -10px, 0);
+  transition:
+    transform 0.2s steps(3, end),
+    visibility 0s linear 0.2s;
+}
+.stage-shield .bf-hp.is-in {
+  visibility: visible;
+  transform: none;
+  transition:
+    transform 0.24s steps(4, end),
+    visibility 0s;
+}
+
+.stage-shield .bf-bar {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.stage-shield .bf-bar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  justify-self: start;
+  padding: 4px 8px 4px 4px;
+  background: rgba(11, 13, 20, 0.86);
+  box-shadow: 3px 3px 0 rgba(11, 13, 20, 0.6);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--cream);
+  text-shadow: 2px 2px 0 var(--void);
+  white-space: nowrap;
+}
+.stage-shield .bf-bar--boss .bf-bar-head {
+  flex-direction: row-reverse;
+  justify-self: end;
+  padding: 4px 4px 4px 8px;
+}
+.stage-shield .bf-icon {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  filter: drop-shadow(2px 2px 0 var(--void));
+}
+.stage-shield .bf-tag {
+  color: var(--gold);
+}
+.stage-shield .bf-bar.is-full .bf-name {
+  color: var(--signal);
+}
+.stage-shield .bf-bar.is-ko .bf-name {
+  color: var(--coral);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.stage-shield .bf-meter {
+  --hp: 1;
+  position: relative;
+  height: 20px;
+  background: var(--void);
+  border: 3px solid var(--cream);
+  outline: 3px solid var(--void);
+  box-shadow: 6px 6px 0 rgba(11, 13, 20, 0.7);
+  overflow: hidden;
+}
+.stage-shield .bf-meter > * {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--hp) * 100%);
+}
+.stage-shield .bf-fill {
+  background: repeating-linear-gradient(90deg, var(--signal) 0 9px, #00b862 9px 12px);
+  box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.45);
+  transition: width 0.12s steps(2, end);
+}
+/* the damage ghost drains after the hit, fighting-game style */
+.stage-shield .bf-ghost {
+  background: var(--cream);
+  transition: width 0.5s steps(6, end) 0.28s;
+}
+.stage-shield .bf-bar--boss .bf-meter > * {
+  left: auto;
+  right: 0;
+}
+.stage-shield .bf-bar--boss .bf-fill {
+  background: repeating-linear-gradient(270deg, var(--coral) 0 9px, var(--magenta) 9px 12px);
+}
+.stage-shield .bf-bar.is-low .bf-fill {
+  animation: bf-low 0.5s steps(1, end) infinite;
+}
+@keyframes bf-low {
+  50% {
+    background: repeating-linear-gradient(90deg, var(--coral) 0 9px, var(--magenta) 9px 12px);
+  }
+}
+
+.stage-shield .bf-vs {
+  align-self: end;
+  min-width: 2.6em;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(22px, 2.3vw, 34px);
+  line-height: 1;
+  color: var(--gold);
+  text-shadow: 3px 3px 0 var(--magenta);
+  padding: 7px 10px 6px;
+  background: rgba(11, 13, 20, 0.9);
+  border: 3px solid var(--cream);
+  outline: 3px solid var(--void);
+  box-shadow: 5px 5px 0 rgba(11, 13, 20, 0.6);
+}
+.stage-shield .bf-vs.is-ko {
+  color: var(--coral);
+  animation: bf-ko 0.42s steps(4, end) both;
+}
+@keyframes bf-ko {
+  0% {
+    transform: scale(2.2);
+  }
+  50% {
+    transform: scale(0.85);
+  }
+  75% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------- column */
+
+.stage-shield .bf-col {
+  position: absolute;
+  left: var(--gutter);
+  top: calc(var(--safe-top) + var(--hp-h) + clamp(16px, 3.2vh, 40px));
+  bottom: var(--safe-bottom);
+  width: min(34rem, 40vw);
+  display: grid;
+  align-content: center;
+}
+.stage-shield .bf-col > * {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.stage-shield .bf-phase {
+  visibility: hidden;
+}
+.stage-shield .bf-phase.is-in {
+  visibility: visible;
+}
+
+/* game windows open like an RPG box: a line that snaps open in steps */
+.stage-shield .bf-pop {
+  visibility: hidden;
+  transform: scale(1, 0.06);
+  transition:
+    transform 0.16s steps(3, end),
+    visibility 0s linear 0.16s;
+}
+.stage-shield .bf-pop.is-in {
+  visibility: visible;
+  transform: none;
+  transition:
+    transform 0.22s steps(4, end),
+    visibility 0s;
+}
+
+/* alert window */
+.stage-shield .bf-alert {
+  border-color: var(--coral);
+  padding-top: 24px;
+  align-self: center;
+}
+.stage-shield .bf-alert::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 8px;
+  background: repeating-linear-gradient(-45deg, var(--coral) 0 8px, var(--void) 8px 16px);
+}
+.stage-shield .bf-alert-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(24px, 2.5vw, 38px);
+  line-height: 1;
+  color: var(--coral);
+  text-shadow: 3px 3px 0 var(--void);
+}
+.stage-shield .bf-bang {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.15em;
+  height: 1.15em;
+  background: var(--coral);
+  color: var(--void);
+  text-shadow: none;
+  box-shadow: 3px 3px 0 var(--void);
+  animation: bf-blink 1s steps(1, end) infinite;
+}
+.stage-shield .bf-log {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: clamp(20px, 1.7vw, 26px);
+  line-height: 1.15;
+  color: var(--cream);
+  white-space: pre-line;
+}
+.stage-shield .bf-tw-off {
+  visibility: hidden;
+}
+
+/* dialogue */
+.stage-shield .bf-copy {
+  display: grid;
+  justify-items: start;
+  align-content: center;
+}
+.stage-shield .bf-eyebrow {
+  margin-bottom: clamp(10px, 1.8vh, 18px);
+  transform-origin: 0 50%;
+}
+.stage-shield .bf-title {
+  font-size: clamp(2.6rem, min(6.4vw, 10.5vh), 6.6rem);
+  line-height: 0.98;
+}
+.stage-shield .bf-dialog {
+  margin-top: clamp(18px, 3vh, 30px);
+  padding-top: 24px;
+  padding-bottom: 22px;
+}
+.stage-shield .bf-speaker {
+  position: absolute;
+  top: -15px;
+  left: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--void);
+  background: var(--signal);
+  padding: 6px 9px 5px;
+  box-shadow: 3px 3px 0 var(--void);
+}
+.stage-shield .bf-body {
+  max-width: 46ch;
+}
+.stage-shield .bf-more {
+  position: absolute;
+  right: 14px;
+  bottom: 8px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 8px solid var(--signal);
+  animation: bf-nudge 0.8s steps(1, end) infinite;
+}
+@keyframes bf-nudge {
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+/* results card */
+.stage-shield .bf-win {
+  display: grid;
+  justify-items: start;
+  align-content: center;
+}
+.stage-shield .bf-card {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  border-color: var(--signal);
+}
+.stage-shield .bf-card .bf-eyebrow {
+  margin: 0;
+}
+.stage-shield .bf-stat {
+  display: grid;
+  gap: 8px;
+}
+.stage-shield .bf-247 {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(56px, min(7vw, 11vh), 112px);
+  line-height: 0.9;
+  color: var(--gold);
+  text-shadow:
+    0.05em 0.05em 0 var(--void),
+    0.08em 0.08em 0 var(--magenta);
+}
+.stage-shield .bf-stat-label {
+  max-width: 34ch;
+}
+.stage-shield .bf-cta {
+  margin-top: 4px;
+}
+
+/* ---------------------------------------------------------------- banners */
+
+.stage-shield .bf-banner {
+  position: absolute;
+  left: var(--ax);
+  pointer-events: none;
+  visibility: hidden;
+  transform: translate3d(-50%, 0, 0);
+  text-align: center;
+}
+.stage-shield .bf-banner.is-in {
+  visibility: visible;
+}
+
+.stage-shield .bf-warning {
+  top: calc(var(--ay) + var(--ah) * 0.7);
+  width: min(var(--aw), 760px);
+}
+.stage-shield .bf-warn-band {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 26px 16px 24px;
+  background: rgba(11, 13, 20, 0.86);
+}
+.stage-shield .bf-warn-band::before,
+.stage-shield .bf-warn-band::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 10px;
+  background: repeating-linear-gradient(-45deg, var(--gold) 0 10px, var(--void) 10px 20px);
+}
+.stage-shield .bf-warn-band::before {
+  top: 0;
+}
+.stage-shield .bf-warn-band::after {
+  bottom: 0;
+}
+.stage-shield .bf-warn-word {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(40px, 6vw, 88px);
+  line-height: 0.95;
+  text-transform: uppercase;
+  color: var(--coral);
+  text-shadow:
+    0.05em 0.05em 0 var(--void),
+    0.08em 0.08em 0 var(--magenta);
+  animation: bf-alarm 0.6s steps(1, end) infinite;
+}
+/* alarm: the word swaps coral/gold (never disappears) at under 2 Hz */
+@keyframes bf-alarm {
+  50% {
+    color: var(--gold);
+  }
+}
+.stage-shield .bf-warn-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.stage-shield .bf-warning.is-in .bf-warn-band {
+  animation: bf-band 0.3s steps(4, end) both;
+}
+@keyframes bf-band {
+  from {
+    transform: scale(1, 0.05);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.stage-shield .bf-youwin {
+  top: calc(var(--ay) + var(--ah) * 0.04);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+.stage-shield .bf-win-word {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(46px, min(6.4vw, 10vh), 108px);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--gold);
+  text-shadow:
+    -3px 0 0 var(--void),
+    3px 0 0 var(--void),
+    0 -3px 0 var(--void),
+    0 3px 0 var(--void),
+    0.06em 0.06em 0 var(--void),
+    0.1em 0.1em 0 var(--magenta);
+}
+.stage-shield .bf-youwin.is-in .bf-win-word {
+  animation: bf-drop 0.5s steps(5, end) both;
+}
+.stage-shield .bf-win-word span {
+  display: inline-block;
+}
+.stage-shield .bf-youwin.is-in .bf-win-word span {
+  animation: bf-wave 1.2s steps(2, end) infinite;
+  animation-delay: calc(0.5s + var(--i) * 0.1s);
+}
+.stage-shield .bf-win-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--void);
+  background: var(--signal);
+  padding: 5px 9px 4px;
+  box-shadow: 3px 3px 0 var(--void);
+}
+@keyframes bf-drop {
+  0% {
+    transform: translateY(-80%) scale(1.5);
+  }
+  40% {
+    transform: translateY(8%) scale(0.92);
+  }
+  70% {
+    transform: translateY(-4%) scale(1.04);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes bf-wave {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: translateY(-0.1em);
+  }
+}
+@keyframes bf-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- callouts */
+
+.stage-shield .bf-callout--weak .callout-svg path {
+  stroke: var(--gold);
+}
+.stage-shield .bf-callout--weak .callout-dot,
+.stage-shield .bf-callout--weak .callout-label {
+  background: var(--gold);
+}
+
+/* ---------------------------------------------------------------- portrait */
+
+.stage-shield .bf.is-portrait {
+  --hp-h: 44px;
+}
+.stage-shield .is-portrait .bf-bar-head {
+  font-size: 10px;
+  gap: 6px;
+}
+.stage-shield .is-portrait .bf-icon {
+  width: 18px;
+  height: 18px;
+}
+.stage-shield .is-portrait .bf-meter {
+  height: 16px;
+  box-shadow: 4px 4px 0 rgba(11, 13, 20, 0.7);
+}
+.stage-shield .is-portrait .bf-vs {
+  font-size: 18px;
+  padding: 5px 6px 4px;
+}
+.stage-shield .is-portrait .bf-col {
+  top: auto;
+  right: var(--gutter);
+  width: auto;
+  align-content: end;
+}
+.stage-shield .is-portrait .bf-copy,
+.stage-shield .is-portrait .bf-win {
+  align-content: end;
+}
+.stage-shield .is-portrait .bf-alert {
+  align-self: end;
+}
+.stage-shield .is-portrait .bf-title {
+  font-size: clamp(2.3rem, 9.4vw, 4.6rem);
+}
+.stage-shield .is-portrait .bf-dialog {
+  margin-top: 20px;
+  padding: 20px 16px 18px;
+}
+.stage-shield .is-portrait .bf-card {
+  padding: 16px;
+}
+.stage-shield .is-portrait .bf-247 {
+  font-size: clamp(48px, 13vw, 88px);
+}
+.stage-shield .is-portrait .bf-warning {
+  top: calc(var(--ay) + var(--ah) + 18px);
+}
+.stage-shield .is-portrait .bf-warn-word {
+  font-size: clamp(34px, 10vw, 64px);
+}
+.stage-shield .is-portrait .bf-win-word {
+  font-size: clamp(40px, 11vw, 80px);
+}
+
+@media (max-width: 420px) {
+  .stage-shield .bf-tag {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-shield .bf-pop,
+  .stage-shield .bf-hp {
+    transition-delay: 0s !important;
+  }
+  .stage-shield .bf-bang,
+  .stage-shield .bf-warn-word,
+  .stage-shield .bf-more,
+  .stage-shield .bf-bar.is-low .bf-fill,
+  .stage-shield .bf-youwin.is-in .bf-win-word span {
+    animation: none;
+  }
+}

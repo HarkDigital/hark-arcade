@@ -48,6 +48,14 @@
   box-sizing: border-box;
 }
 
+/* Pixelify Sans's 'fi' ligature reads as an 'A' ("first" → "Arst") */
+body,
+.hud-title,
+.hud-h2 {
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0, 'clig' 0;
+}
+
 html,
 body {
   margin: 0;
@@ -221,7 +229,8 @@ a {
   border-left: 7px solid var(--signal);
   border-top: 6px solid transparent;
   border-bottom: 6px solid transparent;
-  animation: hud-blink 1s steps(1, end) infinite;
+  /* blink a few times, then stay lit (WCAG 2.2.2: no endless blinking) */
+  animation: hud-blink 1s steps(1, end) 5;
 }
 @keyframes hud-blink {
   50% {

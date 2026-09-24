@@ -188,13 +188,17 @@ export type PostParams = {
   crt: number
   /** barrel curvature */
   curve: number
+  /** iris-wipe centre in UV (0.5, 0.5 = screen centre); set it to close the iris on a character */
+  irisX: number
+  irisY: number
 }
 
 /** Arcade defaults: glowing brights bloom like phosphor. */
 export const POST_DEFAULTS: PostParams = {
-  bloomStrength: 0.55,
-  bloomRadius: 0.5,
-  bloomThreshold: 0.72,
+  // bloom only on true glows: at 0.72 big green/gold fills bloomed and the palette snap turned them cream
+  bloomStrength: 0.5,
+  bloomRadius: 0.3,
+  bloomThreshold: 0.88,
   aberration: 0.0015,
   grain: 0.02,
   vignette: 0.35,
@@ -206,6 +210,8 @@ export const POST_DEFAULTS: PostParams = {
   dither: 0.55,
   crt: 0.55,
   curve: 0.035,
+  irisX: 0.5,
+  irisY: 0.5,
 }
 
 /**
@@ -311,7 +317,7 @@ export class Post {
     const p = this.params
     for (const key of Object.keys(p) as (keyof PostParams)[]) {
       // flash & glitch respond instantly so chapters can punch them
-      c[key] = key === 'flash' || key === 'glitch' ? p[key] : c[key] + (p[key] - c[key]) * k
+      c[key] = key === 'flash' || key === 'glitch' || key === 'irisX' || key === 'irisY' ? p[key] : c[key] + (p[key] - c[key]) * k
     }
     this.bloom.strength = c.bloomStrength
     this.bloom.radius = c.bloomRadius
@@ -332,6 +338,7 @@ export class Post {
     u.uDither.value = c.dither
     u.uCrt.value = c.crt
     u.uCurve.value = c.curve
+    ;(u.uIris.value as THREE.Vector2).set(c.irisX, c.irisY)
     this.composer.render(dt)
   }
 }

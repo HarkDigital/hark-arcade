@@ -1,0 +1,332 @@
+/* ------------------------------------------------------------------
+   Town Chatter (voices) — location banner, RPG dialogue window with a
+   name plate, portrait, typewriter line and a quest tracker; the outro
+   toast. Every selector is scoped under .stage-voices.
+   ------------------------------------------------------------------ */
+
+/* measures the safe area for the JS camera framing (never visible) */
+.stage-voices .vo-probe {
+  position: absolute;
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  left: var(--gutter);
+  right: var(--gutter);
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
+/* ---------------- location banner ---------------- */
+
+.stage-voices .vo-head {
+  position: absolute;
+  top: var(--safe-top);
+  left: 50%;
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--gutter));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px clamp(18px, 2.6vw, 34px) 20px;
+  text-align: center;
+  transform: translateX(-50%) scaleY(0);
+  transform-origin: 50% 0;
+  visibility: hidden;
+  transition:
+    transform 0.16s steps(3, end),
+    visibility 0s linear 0.16s;
+}
+.stage-voices .vo-head.is-on {
+  transform: translateX(-50%);
+  visibility: visible;
+  transition:
+    transform 0.16s steps(3, end),
+    visibility 0s;
+}
+.stage-voices .vo-title {
+  font-size: clamp(2rem, 4.2vw, 4rem);
+}
+.stage-voices .vo-head .rise-w > span {
+  transition-delay: calc(0.14s + var(--i, 0) * 55ms);
+}
+.stage-voices .vo-eyebrow {
+  justify-content: center;
+}
+
+/* ---------------- dialogue window ---------------- */
+
+.stage-voices .vo-dlg {
+  position: absolute;
+  left: var(--gutter);
+  right: var(--gutter);
+  bottom: var(--safe-bottom);
+  max-width: 940px;
+  margin: 0 auto;
+  padding-top: 26px;
+  pointer-events: none;
+}
+
+.stage-voices .vo-dlg-win {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: clamp(14px, 1.8vw, 22px);
+  padding: 22px clamp(18px, 2.2vw, 28px) 24px;
+  transform: scaleY(0);
+  transform-origin: 50% 100%;
+  visibility: hidden;
+  transition:
+    transform 0.16s steps(3, end),
+    visibility 0s linear 0.16s;
+}
+.stage-voices .vo-dlg.is-open .vo-dlg-win {
+  transform: none;
+  visibility: visible;
+  transition:
+    transform 0.16s steps(3, end),
+    visibility 0s;
+}
+
+/* name plate: a small window riding the top border */
+.stage-voices .vo-dlg-tab,
+.stage-voices .vo-dlg-track {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 14px 8px;
+  background: var(--void);
+  border: 4px solid var(--cream);
+  outline: 4px solid var(--void);
+  box-shadow: 5px 5px 0 rgba(11, 13, 20, 0.7);
+  white-space: nowrap;
+  visibility: hidden;
+  transform: translateY(10px);
+  opacity: 0;
+  transition:
+    transform 0.12s steps(2, end),
+    opacity 0.12s steps(2, end),
+    visibility 0s linear 0.12s;
+}
+.stage-voices .vo-dlg-tab {
+  left: 16px;
+  max-width: calc(100% - 32px);
+}
+.stage-voices .vo-dlg-track {
+  right: 16px;
+  align-items: center;
+  gap: 10px;
+}
+.stage-voices .vo-dlg.is-open .vo-dlg-tab,
+.stage-voices .vo-dlg.is-open .vo-dlg-track {
+  visibility: visible;
+  transform: none;
+  opacity: 1;
+  transition:
+    transform 0.12s steps(2, end) 0.14s,
+    opacity 0.12s steps(2, end) 0.14s,
+    visibility 0s linear 0.14s;
+}
+.stage-voices .vo-dlg-who {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(18px, 1.6vw, 22px);
+  line-height: 1;
+  color: var(--gold);
+  text-shadow: 2px 2px 0 var(--void);
+}
+.stage-voices .vo-dlg-co {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--cyan);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stage-voices .vo-dlg-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--cream);
+}
+.stage-voices .vo-dlg-hearts {
+  display: inline-flex;
+  gap: 4px;
+}
+.stage-voices .vo-pip {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: var(--vo-heart-off) center / 14px 14px no-repeat;
+  image-rendering: pixelated;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.stage-voices .vo-pip.is-heard {
+  background-image: var(--vo-heart-on);
+}
+.stage-voices .vo-pip.is-now {
+  background-image: var(--vo-heart-now);
+}
+.stage-voices .vo-pip:hover,
+.stage-voices .vo-pip:focus-visible {
+  transform: translateY(-2px);
+}
+
+/* portrait */
+.stage-voices .vo-dlg-face {
+  width: clamp(80px, 6.6vw, 100px);
+  height: clamp(80px, 6.6vw, 100px);
+  border: 4px solid var(--cream);
+  outline: 4px solid var(--void);
+  background: var(--night);
+  box-shadow: 4px 4px 0 var(--void);
+}
+.stage-voices .vo-dlg-face canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+/* the line: all eight share one grid cell so the window never changes height */
+.stage-voices .vo-dlg-text {
+  display: grid;
+  min-width: 0;
+}
+.stage-voices .vo-q {
+  grid-area: 1 / 1;
+  visibility: hidden;
+  font-size: clamp(23px, 2.05vw, 30px);
+  line-height: 1.14;
+  letter-spacing: 0.01em;
+  color: var(--white);
+  text-wrap: pretty;
+}
+.stage-voices .vo-q.is-on {
+  visibility: visible;
+}
+.stage-voices .vo-q .vo-q-rest {
+  visibility: hidden;
+}
+
+/* ▼ next: blinks once the line has finished typing */
+.stage-voices .vo-dlg-next {
+  position: absolute;
+  right: 14px;
+  bottom: 4px;
+  font-family: var(--font-sans);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--signal);
+  opacity: 0;
+}
+.stage-voices .vo-dlg.is-done .vo-dlg-next {
+  opacity: 1;
+  animation: vo-next 1s steps(1, end) infinite;
+}
+@keyframes vo-next {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(3px);
+    opacity: 0.25;
+  }
+}
+
+/* ---------------- outro toast ---------------- */
+
+.stage-voices .vo-outro {
+  position: absolute;
+  left: 50%;
+  bottom: var(--safe-bottom);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  white-space: nowrap;
+  transform: translateX(-50%) scaleY(0);
+  transform-origin: 50% 100%;
+  visibility: hidden;
+  transition:
+    transform 0.16s steps(3, end),
+    visibility 0s linear 0.16s;
+}
+.stage-voices .vo-outro.is-on {
+  transform: translateX(-50%);
+  visibility: visible;
+  transition:
+    transform 0.16s steps(3, end),
+    visibility 0s;
+}
+.stage-voices .vo-outro-hearts {
+  display: inline-flex;
+  gap: 3px;
+}
+.stage-voices .vo-outro-hearts i {
+  width: 14px;
+  height: 14px;
+  background: var(--vo-heart-on) center / 14px 14px no-repeat;
+  image-rendering: pixelated;
+}
+.stage-voices .vo-outro-txt {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--cream);
+}
+
+/* ---------------- small screens ---------------- */
+
+@media (max-width: 640px) {
+  .stage-voices .vo-dlg {
+    padding-top: 24px;
+  }
+  .stage-voices .vo-dlg-win {
+    grid-template-columns: 1fr;
+    padding: 30px 14px 22px;
+  }
+  .stage-voices .vo-dlg-face {
+    position: absolute;
+    right: 12px;
+    top: -30px;
+    width: 52px;
+    height: 52px;
+    z-index: 3;
+  }
+  .stage-voices .vo-dlg-tab {
+    left: 10px;
+    max-width: calc(100% - 96px);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    padding: 6px 10px 7px;
+  }
+  .stage-voices .vo-dlg-track {
+    display: none;
+  }
+  .stage-voices .vo-q {
+    font-size: 21px;
+    line-height: 1.12;
+  }
+  .stage-voices .vo-head {
+    width: calc(100vw - 2 * var(--gutter));
+    padding: 12px 14px 16px;
+  }
+  .stage-voices .vo-outro-hearts {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-voices .vo-dlg.is-done .vo-dlg-next {
+    animation: none;
+  }
+}

@@ -1,0 +1,517 @@
+/* ------------------------------------------------------------------
+   LEVEL 2 — ARCADE HALL (src/chapters/work). Every selector is scoped
+   under .stage-work. Game windows open like RPG boxes: a thin bar grows
+   across, then drops open, on stepped timing.
+   ------------------------------------------------------------------ */
+
+.stage-work .wk-safe {
+  position: absolute;
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  left: var(--gutter);
+  right: var(--gutter);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ---------------- window open / close ---------------- */
+
+@keyframes wk-open {
+  0% {
+    transform: scale(0.08, 0.05);
+    visibility: visible;
+  }
+  45% {
+    transform: scale(1, 0.05);
+  }
+  100% {
+    transform: none;
+    visibility: visible;
+  }
+}
+@keyframes wk-close {
+  0% {
+    transform: none;
+    visibility: visible;
+  }
+  55% {
+    transform: scale(1, 0.05);
+    visibility: visible;
+  }
+  100% {
+    transform: scale(0.08, 0.05);
+    visibility: hidden;
+  }
+}
+.stage-work .wk-win {
+  visibility: hidden;
+  transform-origin: 50% 50%;
+  animation: wk-close 0.18s steps(3, end) both;
+}
+.stage-work .wk-win.is-on {
+  visibility: visible;
+  animation: wk-open 0.3s steps(4, end) both;
+}
+
+/* the label notch on a window's top border, like an RPG menu title */
+.stage-work .wk-tab {
+  position: absolute;
+  top: -15px;
+  left: 14px;
+  background: var(--void);
+  padding: 3px 10px 3px 8px;
+  border: 2px solid var(--cream);
+  line-height: 1;
+}
+.stage-work .wk-tab .hud-eyebrow {
+  font-size: 11px;
+  gap: 7px;
+}
+.stage-work .wk-tab .hud-eyebrow::before {
+  border-left-width: 6px;
+  border-top-width: 5px;
+  border-bottom-width: 5px;
+}
+
+/* ---------------- READY! ---------------- */
+
+.stage-work .wk-ready {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2.2rem, 5.4vw, 4.4rem);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-shadow:
+    0.06em 0.06em 0 var(--void),
+    0.1em 0.1em 0 var(--magenta);
+  visibility: hidden;
+  white-space: nowrap;
+}
+.stage-work .wk-ready.is-on {
+  visibility: visible;
+}
+.stage-work .wk-ready.is-on span {
+  display: inline-block;
+  animation: wk-blink 0.9s steps(1, end) infinite;
+}
+@keyframes wk-blink {
+  60% {
+    opacity: 0;
+  }
+}
+
+/* ---------------- level title ---------------- */
+
+.stage-work .wk-intro {
+  position: absolute;
+  left: var(--gutter);
+  top: calc(var(--safe-top) + 18px);
+  max-width: min(760px, calc(100% - 2 * var(--gutter)));
+  padding: 26px 26px 18px;
+  transform-origin: 0 50%;
+}
+.stage-work .wk-intro-title {
+  font-size: clamp(2.6rem, 6.2vw, 6rem);
+}
+.stage-work .wk-intro-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 14px 0 0;
+}
+.stage-work .wk-intro-meta .hud-label {
+  color: var(--cream);
+}
+.stage-work .wk-intro-meta .hud-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.stage-work .wk-intro-meta .hud-label::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background: var(--signal);
+  box-shadow: 2px 2px 0 var(--void);
+}
+
+/* ---------------- docks ---------------- */
+
+.stage-work .wk-dock {
+  position: absolute;
+  left: var(--gutter);
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
+  width: min(468px, 37vw);
+  display: grid;
+  align-items: center;
+  pointer-events: none;
+}
+.stage-work .wk-dock > * {
+  grid-area: 1 / 1;
+}
+.stage-work .wk-dock--scores {
+  width: min(560px, 44vw);
+}
+
+/* ---------------- cabinet card ---------------- */
+
+.stage-work .wk-card {
+  --accent: var(--signal);
+  padding: 28px 22px 20px;
+}
+.stage-work .wk-badge {
+  position: absolute;
+  top: -14px;
+  right: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--void);
+  background: var(--gold);
+  padding: 5px 8px;
+  box-shadow: 3px 3px 0 var(--void);
+}
+.stage-work .wk-name {
+  font-size: clamp(2rem, 3.2vw, 3.3rem);
+  line-height: 0.98;
+}
+.stage-work .wk-kind {
+  margin: 10px 0 0;
+  color: var(--gold);
+  font-size: 12px;
+}
+.stage-work .wk-card .hud-rule {
+  margin: 14px 0 12px;
+}
+.stage-work .wk-blurb {
+  min-height: 2.4em;
+}
+.stage-work .wk-ghost {
+  visibility: hidden;
+}
+.stage-work .wk-typed::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 0.9em;
+  margin-left: 2px;
+  vertical-align: -0.1em;
+  background: var(--signal);
+}
+.stage-work .wk-card.is-typed .wk-typed::after {
+  display: none;
+}
+.stage-work .wk-tags {
+  margin-top: 14px;
+}
+.stage-work .wk-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 18px;
+}
+.stage-work .wk-host {
+  color: var(--fg-muted);
+}
+/* RPG "more" arrow, bottom-right */
+.stage-work .wk-more {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 8px solid var(--signal);
+  animation: wk-bob 0.8s steps(2, end) infinite;
+}
+@keyframes wk-bob {
+  50% {
+    transform: translateY(3px);
+  }
+}
+
+/* ---------------- high-score table ---------------- */
+
+.stage-work .wk-scores {
+  padding: 26px 20px 18px;
+}
+.stage-work .wk-scores-title {
+  font-size: clamp(1.9rem, 3vw, 3rem);
+}
+.stage-work .wk-thead,
+.stage-work .wk-row {
+  display: grid;
+  grid-template-columns: 3.1em minmax(0, 1.35fr) minmax(0, 1fr) 1.1em;
+  column-gap: 12px;
+  align-items: center;
+}
+.stage-work .wk-thead {
+  margin: 14px 0 4px;
+  padding: 0 8px 6px 22px;
+  border-bottom: 4px dotted var(--line-strong);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.stage-work .wk-rows {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.stage-work .wk-row {
+  position: relative;
+  padding: 3px 8px 3px 22px;
+  text-decoration: none;
+  color: var(--c, var(--cream));
+  font-family: var(--font-sans);
+  font-size: 22px;
+  line-height: 1.05;
+}
+.stage-work .wk-rank {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.stage-work .wk-rname {
+  overflow-wrap: anywhere;
+}
+.stage-work .wk-rname small {
+  font-size: 0.8em;
+  color: var(--gold);
+}
+.stage-work .wk-rind {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.stage-work .wk-arrow {
+  text-align: right;
+}
+/* the menu cursor */
+.stage-work .wk-row::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  margin-top: -6px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid var(--void);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  visibility: hidden;
+}
+.stage-work .is-sel .wk-row,
+.stage-work .wk-row:hover,
+.stage-work .wk-row:focus-visible {
+  background: var(--c, var(--cream));
+  color: var(--void);
+  box-shadow: 3px 3px 0 var(--void);
+}
+.stage-work .is-sel .wk-row .wk-rname small,
+.stage-work .wk-row:hover .wk-rname small {
+  color: var(--void);
+}
+.stage-work .is-sel .wk-row::before,
+.stage-work .wk-row:hover::before {
+  visibility: visible;
+  animation: hud-blink 1s steps(1, end) infinite;
+}
+.stage-work .wk-cta-note {
+  color: var(--fg-muted);
+}
+
+/* ---------------- LEVEL CLEAR ---------------- */
+
+.stage-work .wk-clear {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  visibility: hidden;
+  width: max-content;
+  max-width: calc(100% - 2 * var(--gutter));
+}
+.stage-work .wk-clear.is-on {
+  visibility: visible;
+}
+.stage-work .wk-clear-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2.6rem, 8vw, 7.4rem);
+  line-height: 0.95;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-shadow:
+    0.05em 0.05em 0 var(--void),
+    0.09em 0.09em 0 var(--magenta);
+  transform: scale(0);
+}
+.stage-work .wk-clear.is-on .wk-clear-title {
+  animation: wk-pop 0.42s steps(6, end) both;
+}
+@keyframes wk-pop {
+  0% {
+    transform: scale(0);
+  }
+  55% {
+    transform: scale(1.18);
+  }
+  75% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.stage-work .wk-clear-next {
+  display: inline-block;
+  margin: 18px 0 0;
+  padding: 6px 10px;
+  color: var(--void);
+  background: var(--signal);
+  box-shadow: 3px 3px 0 var(--void);
+}
+
+/* ---------------- portrait: windows dock along the bottom ---------------- */
+
+@media (max-aspect-ratio: 10/9) {
+  .stage-work .wk-dock,
+  .stage-work .wk-dock--scores {
+    top: auto;
+    left: var(--gutter);
+    right: var(--gutter);
+    width: auto;
+    max-width: 620px;
+    margin: 0 auto;
+    align-items: end;
+  }
+  .stage-work .wk-dock--scores {
+    top: calc(var(--safe-top) + 10px);
+  }
+  .stage-work .wk-card {
+    padding: 24px 16px 16px;
+  }
+  .stage-work .wk-name {
+    font-size: clamp(1.8rem, 7.4vw, 2.8rem);
+  }
+  .stage-work .wk-intro {
+    top: calc(var(--safe-top) + 14px);
+    padding: 22px 18px 14px;
+  }
+  .stage-work .wk-intro-title {
+    font-size: clamp(2.4rem, 11vw, 4.6rem);
+  }
+  .stage-work .wk-scores {
+    padding: 24px 14px 14px;
+  }
+}
+
+/* two-line rows (industry under the name) where the window is narrow */
+@media (max-width: 1200px) {
+  .stage-work .wk-thead {
+    display: none;
+  }
+  .stage-work .wk-row {
+    grid-template-columns: 2.7em minmax(0, 1fr) 1em;
+    grid-template-areas:
+      'rank name arrow'
+      'rank ind arrow';
+    column-gap: 8px;
+    padding: 3px 6px 3px 18px;
+    font-size: 20px;
+  }
+  .stage-work .wk-row::before {
+    left: 4px;
+  }
+  .stage-work .wk-rank {
+    grid-area: rank;
+    font-size: 11px;
+  }
+  .stage-work .wk-rname {
+    grid-area: name;
+    white-space: normal;
+  }
+  .stage-work .wk-rind {
+    grid-area: ind;
+  }
+  .stage-work .wk-arrow {
+    grid-area: arrow;
+  }
+  .stage-work .wk-scores-title {
+    font-size: clamp(1.6rem, 7vw, 2.2rem);
+  }
+}
+
+@media (max-height: 700px) and (max-aspect-ratio: 10/9) {
+  .stage-work .wk-card {
+    padding: 20px 14px 12px;
+  }
+  .stage-work .wk-card .hud-rule {
+    margin: 8px 0 6px;
+  }
+  .stage-work .wk-tags {
+    margin-top: 8px;
+  }
+  .stage-work .wk-cta {
+    margin-top: 10px;
+  }
+  .stage-work .wk-card .hud-btn {
+    padding: 9px 14px;
+  }
+  .stage-work .wk-name {
+    font-size: 1.7rem;
+  }
+  .stage-work .wk-rows .wk-row {
+    padding-top: 1px;
+    padding-bottom: 1px;
+    line-height: 1;
+  }
+  .stage-work .wk-scores .wk-cta {
+    margin-top: 10px;
+  }
+}
+
+@media (max-height: 760px) and (min-aspect-ratio: 10/9) {
+  .stage-work .wk-card {
+    padding: 24px 18px 14px;
+  }
+  .stage-work .wk-card .hud-rule {
+    margin: 10px 0 8px;
+  }
+  .stage-work .wk-cta {
+    margin-top: 12px;
+  }
+  .stage-work .wk-row {
+    font-size: 20px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-work .wk-ready.is-on span,
+  .stage-work .wk-more,
+  .stage-work .is-sel .wk-row::before,
+  .stage-work .wk-row:hover::before {
+    animation: none !important;
+  }
+  .stage-work .wk-clear.is-on .wk-clear-title {
+    animation: none;
+    transform: none;
+  }
+}

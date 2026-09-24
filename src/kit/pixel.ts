@@ -15,7 +15,7 @@ import { PALETTE_HEX } from '../core/post'
  *                             (one merged mesh per colour) — sprites in 3D
  *   sprite(rows, map, opts)   flat pixel-art sprite on a plane (nearest filter)
  *   pixelText(text, opts)     canvas pixel-font text as a plane (Silkscreen /
- *                             Pixelify), nearest filtered
+ *                             display face), nearest filtered
  *
  * ASCII art: each row is a string; each char maps to a colour via `map`
  * (e.g. { g: P.signal, w: P.white }); '.' or ' ' is empty. For voxels, pass
@@ -156,14 +156,14 @@ export function sprite(rows: string[], map: ColorMap, o: { pixelSize?: number; g
 }
 
 /**
- * Pixel-font text on a plane. Draws with Silkscreen (or Pixelify Sans) at an
+ * Pixel-font text on a plane. Draws with Silkscreen (or the display face) at an
  * integer pixel size so glyphs stay crisp, then nearest-filters it.
  */
 export function pixelText(
   text: string,
-  o: { color?: string; font?: 'silkscreen' | 'pixelify'; px?: number; height?: number; glow?: number; bg?: string } = {},
+  o: { color?: string; font?: 'silkscreen' | 'display'; px?: number; height?: number; glow?: number; bg?: string } = {},
 ): THREE.Mesh {
-  const fam = o.font === 'pixelify' ? "700 FONTPX 'Pixelify Sans Variable', monospace" : "400 FONTPX 'Silkscreen', monospace"
+  const fam = o.font === 'display' ? "700 FONTPX 'Hark Pixel', monospace" : "400 FONTPX 'Silkscreen', monospace"
   const px = o.px ?? 16
   const cv = document.createElement('canvas')
   const ctx = cv.getContext('2d')!

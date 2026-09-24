@@ -6,7 +6,7 @@
 .stage-process .pm {
   position: absolute;
   inset: 0;
-  /* Pixelify's fi/fl ligatures read as other glyphs at display sizes */
+  /* pixel type: no ligatures */
   font-variant-ligatures: none;
   font-feature-settings:
     'liga' 0,

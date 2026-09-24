@@ -426,7 +426,7 @@ export function buildNodes(hooks: ReturnType<typeof buildStatic>, mobile: boolea
     group.add(f.mesh)
     flags.push(f)
     flagBase.push(new THREE.Vector3(x + 0.5 + 0.3, y, z - 0.3))
-    const c = labelMesh('CLEAR!', { font: 'pixelify', px: 16, fg: P.gold, outline: P.void, shadow: P.magenta, height: 0.62 })
+    const c = labelMesh('CLEAR!', { font: 'display', px: 16, fg: P.gold, outline: P.void, shadow: P.magenta, height: 0.62 })
     c.position.set(x + 1.05, y + 1.55, z - 0.3)
     c.visible = false
     group.add(c)
@@ -440,7 +440,7 @@ export function buildNodes(hooks: ReturnType<typeof buildStatic>, mobile: boolea
   group.add(startPad)
 
   const ready = labelMesh('READY?', {
-    font: 'pixelify',
+    font: 'display',
     px: 16,
     fg: P.cream,
     outline: P.void,
@@ -451,7 +451,7 @@ export function buildNodes(hooks: ReturnType<typeof buildStatic>, mobile: boolea
   ready.position.set(sx, 1.72, sz)
   group.add(ready)
   const won = labelMesh('WORLD CLEAR!', {
-    font: 'pixelify',
+    font: 'display',
     px: 16,
     fg: P.gold,
     outline: P.void,

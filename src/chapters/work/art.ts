@@ -10,7 +10,7 @@ import { logoOutlines } from '../../logo/logo'
  * Philadelphia skyline outside the windows and the neon signs.
  */
 
-export const FONT_DISPLAY = "'Pixelify Sans Variable', 'Pixelify Sans', monospace"
+export const FONT_DISPLAY = "'Hark Pixel', monospace"
 export const FONT_MONO = "'Silkscreen', monospace"
 
 /** Cabinet colour schemes (side art, stripes, trim, marquee bands, attract screen). */

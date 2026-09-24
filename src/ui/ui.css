@@ -10,7 +10,7 @@
 
 /* ================================================================ shared */
 
-/* Pixelify Sans draws "fi" as a ligature that reads like an "A": keep letters apart */
+/* pixel type: keep letters apart (no ligatures) */
 .chrome,
 .ld,
 .rot,

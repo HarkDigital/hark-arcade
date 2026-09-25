@@ -23,6 +23,11 @@ const C_BAD_B = new THREE.Color(P.purple)
 const C_SAFE_A = new THREE.Color(P.pine)
 const C_SAFE_B = new THREE.Color(P.night)
 const C_WAVE = new THREE.Color(P.signal).multiplyScalar(1.2)
+const C_HOT = new THREE.Color(P.coral)
+const LED_COLS = [new THREE.Color(P.coral), new THREE.Color(P.gold), new THREE.Color(P.signal)]
+const C_LED_OFF = new THREE.Color(P.night)
+const C_MOON = new THREE.Color(P.steel)
+const C_SUN = new THREE.Color(P.gold)
 
 export interface FloorState {
   time: number
@@ -45,7 +50,17 @@ export class Floor {
   mesh: THREE.InstancedMesh
   bed: THREE.Mesh
   private tiles: { x: number; z: number; odd: boolean; h: number }[] = []
-  private _c = new THREE.Color()
+  /** per-tile distance to the corruption source / the site (cached per layout) */
+  private dB: Float32Array
+  private dS: Float32Array
+  private srcX = NaN
+  private siteX = NaN
+  // the quantised state last written (the loop + upload only run when it changes)
+  private kFlick = NaN
+  private kCorrupt = NaN
+  private kSafe = NaN
+  private kWave = NaN
+  private kClean = NaN
 
   constructor() {
     const geo = new THREE.BoxGeometry(TILE * 0.94, 0.14, TILE * 0.94)
@@ -57,6 +72,8 @@ export class Floor {
         this.tiles.push({ x, z, odd: ((ix + iz) & 1) === 1, h: hash1(ix * 13.1 + iz * 7.7) })
       }
     }
+    this.dB = new Float32Array(this.tiles.length)
+    this.dS = new Float32Array(this.tiles.length)
     this.mesh = new THREE.InstancedMesh(
       geo,
       new THREE.MeshToonMaterial({ color: '#ffffff', gradientMap: toon('#ffffff').gradientMap }),
@@ -77,28 +94,70 @@ export class Floor {
   }
 
   update(st: FloorState) {
-    const flick = st.pace > 0 ? Math.floor(st.time * 8) : 0
-    for (let i = 0; i < this.tiles.length; i++) {
-      const t = this.tiles[i]
-      const c = this._c.copy(t.odd ? C_A : C_B)
-      // corruption: a ragged blob spreading from under the boss
-      const dB = Math.hypot(t.x - st.srcX, (t.z - 0.2) * 1.5)
-      const reach = st.corrupt * 6.8 - t.h * 1.4
-      let bad = dB < reach
-      // the shield's footprint stays safe
-      const dS = Math.hypot(t.x - st.siteX, t.z * 1.4)
-      const safe = st.safe > 0 && dS < 1.7 * st.safe
-      if (safe) bad = false
-      if (st.clean >= 1) bad = false
-      if (st.wave >= 0 && dS < st.wave) bad = false
-      if (bad) {
-        c.copy(t.odd ? C_BAD_A : C_BAD_B)
-        if (t.h > 0.8 && hash1(flick + t.h * 50) > 0.6) c.set(P.coral)
-      } else if (safe) c.copy(t.odd ? C_SAFE_A : C_SAFE_B)
-      if (st.wave >= 0 && Math.abs(dS - st.wave) < 0.45) c.copy(C_WAVE)
-      this.mesh.setColorAt(i, c)
+    const tiles = this.tiles
+    const n = tiles.length
+    if (st.srcX !== this.srcX || st.siteX !== this.siteX) {
+      this.srcX = st.srcX
+      this.siteX = st.siteX
+      for (let i = 0; i < n; i++) {
+        const t = tiles[i]
+        const bx = t.x - st.srcX
+        const bz = (t.z - 0.2) * 1.5
+        this.dB[i] = Math.sqrt(bx * bx + bz * bz)
+        const sx = t.x - st.siteX
+        const sz = t.z * 1.4
+        this.dS[i] = Math.sqrt(sx * sx + sz * sz)
+      }
+      this.kCorrupt = NaN
     }
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true
+    // quantise the state: the floor is a tile grid, so these steps are invisible,
+    // and the colours only need rewriting (and re-uploading) when one changes
+    const clean = st.clean >= 1 ? 1 : 0
+    const corrupt = Math.round(st.corrupt * 20)
+    const safe = Math.round(st.safe * 20)
+    const wave = st.wave >= 0 ? Math.round(st.wave * 8) : -1
+    // the coral flicker only matters while corrupted tiles can exist
+    const flick = st.pace > 0 && corrupt > 0 && !clean ? Math.floor(st.time * 8) : 0
+    if (
+      flick === this.kFlick &&
+      corrupt === this.kCorrupt &&
+      safe === this.kSafe &&
+      wave === this.kWave &&
+      clean === this.kClean
+    )
+      return
+    this.kFlick = flick
+    this.kCorrupt = corrupt
+    this.kSafe = safe
+    this.kWave = wave
+    this.kClean = clean
+
+    const attr = this.mesh.instanceColor
+    if (!attr) return
+    const arr = attr.array as Float32Array
+    const reachK = (corrupt / 20) * 6.8
+    const safeR = 1.7 * (safe / 20)
+    const waveR = wave >= 0 ? wave / 8 : -1
+    for (let i = 0; i < n; i++) {
+      const t = tiles[i]
+      const dS = this.dS[i]
+      // corruption: a ragged blob spreading from under the boss
+      let bad = this.dB[i] < reachK - t.h * 1.4
+      // the shield's footprint stays safe
+      const inSafe = safe > 0 && dS < safeR
+      if (inSafe || clean || (waveR >= 0 && dS < waveR)) bad = false
+      let c: THREE.Color = t.odd ? C_A : C_B
+      if (bad) {
+        c = t.odd ? C_BAD_A : C_BAD_B
+        if (t.h > 0.8 && hash1(flick + t.h * 50) > 0.6) c = C_HOT
+      } else if (inSafe) c = t.odd ? C_SAFE_A : C_SAFE_B
+      if (waveR >= 0 && Math.abs(dS - waveR) < 0.45) c = C_WAVE
+      const k = i * 3
+      arr[k] = c.r
+      arr[k + 1] = c.g
+      arr[k + 2] = c.b
+    }
+    attr.needsUpdate = true
   }
 }
 
@@ -114,7 +173,9 @@ export class Backdrop {
   private bandMat: THREE.MeshBasicMaterial
   private ledList: { x: number; y: number; z: number; h: number }[] = []
   private _m = new THREE.Matrix4()
-  private _c = new THREE.Color()
+  private kTick = NaN
+  private kMood = NaN
+  private kDawn = NaN
 
   constructor(mobile: boolean) {
     // server racks: two rows of dark towers at different depths (parallax)
@@ -151,7 +212,7 @@ export class Backdrop {
     this.ledList.forEach((l, i) => {
       this._m.makeTranslation(l.x, l.y, l.z)
       this.leds.setMatrixAt(i, this._m)
-      this.leds.setColorAt(i, this._c.set(P.coral))
+      this.leds.setColorAt(i, LED_COLS[0])
     })
     this.leds.frustumCulled = false
 
@@ -178,20 +239,31 @@ export class Backdrop {
    */
   update(time: number, pace: number, mood: number, dawn: number, bandColor: THREE.Color) {
     const tq = pace > 0 ? Math.floor(time * 6) : 0
-    const cols = [P.coral, P.gold, P.signal]
-    for (let i = 0; i < this.ledList.length; i++) {
-      const l = this.ledList[i]
-      const on = pace > 0 ? hash1(tq * 0.37 + l.h * 91) > 0.3 : l.h > 0.3
-      const col = cols[Math.min(2, Math.max(0, Math.round(mood + (l.h - 0.5) * 0.4)))]
-      this._c.set(on ? col : P.night)
-      this.leds.setColorAt(i, this._c)
+    // LEDs: rewrite (and re-upload) only when the 6 Hz tick or the mood changes
+    const attr = this.leds.instanceColor
+    if (attr && (tq !== this.kTick || mood !== this.kMood)) {
+      this.kTick = tq
+      this.kMood = mood
+      const arr = attr.array as Float32Array
+      for (let i = 0; i < this.ledList.length; i++) {
+        const l = this.ledList[i]
+        const on = pace > 0 ? hash1(tq * 0.37 + l.h * 91) > 0.3 : l.h > 0.3
+        const c = on ? LED_COLS[Math.min(2, Math.max(0, Math.round(mood + (l.h - 0.5) * 0.4)))] : C_LED_OFF
+        const k = i * 3
+        arr[k] = c.r
+        arr[k + 1] = c.g
+        arr[k + 2] = c.b
+      }
+      attr.needsUpdate = true
     }
-    if (this.leds.instanceColor) this.leds.instanceColor.needsUpdate = true
     const d = stepq(dawn, 4)
-    // a pale steel moon (the magenta boss reads as a silhouette against it,
-    // and it stays under the bloom threshold) that turns into a gold sunrise
-    this.moonMat.color.set(P.steel).lerp(this._c.set(P.gold), d)
-    this.moon.position.y = 4.8 - d * 0.6
+    if (d !== this.kDawn) {
+      this.kDawn = d
+      // a pale steel moon (the magenta boss reads as a silhouette against it,
+      // and it stays under the bloom threshold) that turns into a gold sunrise
+      this.moonMat.color.copy(C_MOON).lerp(C_SUN, d)
+      this.moon.position.y = 4.8 - d * 0.6
+    }
     this.bandMat.color.copy(bandColor)
   }
 }

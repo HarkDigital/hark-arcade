@@ -174,8 +174,9 @@
   gap: 5px;
   padding: 0 12px;
   height: var(--ch-h);
-  background: rgba(11, 13, 20, 0.72);
-  box-shadow: 0 0 0 3px rgba(11, 13, 20, 0.72);
+  /* opaque: the coral 1UP keeps its contrast over the brightest scenes */
+  background: var(--void);
+  box-shadow: 0 0 0 3px var(--void);
   line-height: 1;
 }
 .ch-score-k {
@@ -245,7 +246,8 @@
 .ch-link:hover .ch-cur,
 .ch-link:focus-visible .ch-cur {
   visibility: visible;
-  animation: ui-nudge 0.5s steps(1, end) infinite;
+  /* a few nudges, then the cursor rests (never endless) */
+  animation: ui-nudge 0.5s steps(1, end) 5;
 }
 .ch-link:hover,
 .ch-link:focus-visible {
@@ -282,7 +284,7 @@
 .ch-cta:hover .ch-coin,
 .ch-cta:focus-visible .ch-coin,
 .ch-menu-cta:hover .ch-coin {
-  animation: ch-spin 0.48s steps(4, end) infinite;
+  animation: ch-spin 0.48s steps(4, end) 4;
 }
 @keyframes ch-spin {
   0%,
@@ -342,6 +344,7 @@
 }
 
 .ch-sound {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 11px;
@@ -379,7 +382,8 @@
 }
 .chrome.is-sound .spk-b {
   visibility: visible;
-  animation: ui-blink 0.9s steps(1, end) infinite;
+  /* the outer wave pulses a few times when sound comes on, then stays lit */
+  animation: ui-blink 0.9s steps(1, end) 5;
 }
 .ch-sound-state {
   color: var(--steel);
@@ -397,6 +401,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
   padding: 7px 9px 6px 11px;
   pointer-events: auto;
 }
@@ -416,9 +421,10 @@
   color: var(--gold);
 }
 .ch-lv-n {
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 16px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 0.8;
   vertical-align: -1px;
 }
 .chrome.is-cue .ch-lv {
@@ -426,6 +432,11 @@
 }
 .ch-read-name {
   display: inline-block;
+  /* a backstop only: a long "Go to level" cue on a tiny screen trims its tail
+     instead of pushing the window into the sound toggle */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ch-game {
   color: var(--cream);
@@ -703,7 +714,7 @@
   align-self: start;
   margin-top: 3px;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--steel);
@@ -739,7 +750,7 @@
 .ch-ml:hover .ch-ml-cur,
 .ch-ml:focus .ch-ml-cur {
   visibility: visible;
-  animation: ui-nudge 0.5s steps(1, end) infinite;
+  animation: ui-nudge 0.5s steps(1, end) 5;
 }
 .ch-ml:focus-visible {
   outline-offset: -3px;
@@ -854,7 +865,11 @@
     font-size: 16px;
   }
   .ch-sub {
-    font-size: 8px;
+    font-size: 10px;
+    letter-spacing: 0.02em;
+  }
+  .ch-sub .wm-tag {
+    gap: 0.4em;
   }
   .ch-left {
     gap: 9px;
@@ -864,7 +879,7 @@
     gap: 4px;
   }
   .ch-score-k {
-    font-size: 9px;
+    font-size: 10px;
   }
   .ch-score-v {
     font-size: 15px;
@@ -893,12 +908,13 @@
     gap: 2px;
   }
   .ch-read {
-    font-size: 9.5px;
+    font-size: 11px;
+    letter-spacing: 0.03em;
     gap: 6px;
   }
   .ch-lv-n {
-    font-size: 12px;
-    vertical-align: 0;
+    font-size: 17px;
+    vertical-align: -1px;
   }
   /* "LEVEL 3 · Services": the game name lives in the pause menu on phones */
   .ch-game {
@@ -907,18 +923,22 @@
   .ch-plain {
     color: var(--cream);
   }
-  .ch-lives .px {
-    width: 11px;
-    height: 9px;
+  .ch-level .ch-lives {
+    gap: 2px;
+    padding-left: 6px;
+  }
+  .ch-level .ch-lives .px {
+    width: 14px;
+    height: 12px;
   }
   .ch-pip {
     width: 24px;
     height: 24px;
   }
   .ch-pip-b {
-    width: 18px;
-    height: 16px;
-    font-size: 8px;
+    width: 20px;
+    height: 18px;
+    font-size: 10px;
   }
 }
 
@@ -947,13 +967,33 @@
     padding: 0 9px 0 8px;
     gap: 7px;
   }
-  .ch-sound-txt {
-    font-size: 9.5px;
+  /* the hearts are decoration (they also live in the pause menu): the level
+     name gets their room */
+  .ch-level .ch-lives {
+    display: none;
   }
 }
 @media (max-width: 350px) {
   .ch-score {
     display: none;
+  }
+}
+/* 320-359px (a small phone, or 400% zoom): the sound toggle is its icon
+   (the word stays for screen readers; the hearts are already gone), so all
+   seven 24px level pips fit inside the gutters */
+@media (max-width: 359px) {
+  .ch-bottom .ch-sound {
+    position: relative;
+    padding: 0 10px;
+  }
+  .ch-bottom .ch-sound-txt {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 }
 
@@ -971,6 +1011,178 @@
 @media (max-height: 560px) and (min-width: 601px) {
   .chrome {
     --ch-h: 44px;
+  }
+}
+
+/* Short landscape (a phone after "Continue anyway", a laptop at 400% zoom):
+   the same query base.css uses to shrink --safe-top / --safe-bottom to about
+   56 / 52px, so the HUD collapses to fit those bands: a compact brand and
+   1UP, the sound toggle as its icon, the level window as pips only. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .chrome {
+    --ch-h: 38px;
+    --ch-top: calc(env(safe-area-inset-top, 0px) + 7px);
+    --ch-bot: calc(env(safe-area-inset-bottom, 0px) + 7px);
+  }
+  .ch-top {
+    align-items: center;
+  }
+  .ch-left {
+    gap: 10px;
+  }
+  .ch-brand {
+    gap: 7px;
+    padding: 0 10px 0 4px;
+  }
+  .ch-mark .px-mark {
+    width: 28px;
+    height: 28px;
+  }
+  .ch-brand-text {
+    gap: 3px;
+  }
+  .ch-word {
+    font-size: 16px;
+  }
+  .ch-sub {
+    font-size: 10px;
+    letter-spacing: 0.02em;
+  }
+  .ch-sub .wm-tag {
+    gap: 0.4em;
+  }
+  .ch-score {
+    padding: 0 8px;
+    gap: 3px;
+  }
+  .ch-score-k {
+    font-size: 10px;
+  }
+  .ch-score-v {
+    font-size: 16px;
+  }
+  .ch-links,
+  .ch-cta,
+  .ch-menu-btn,
+  .ch-top .ch-menu-btn {
+    height: var(--ch-h);
+  }
+  .ch-link {
+    height: 32px;
+  }
+  .ch-link.is-active::after {
+    bottom: 6px;
+  }
+  .ch-menu-btn {
+    padding: 0 11px 0 10px;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .ch-sound {
+    height: var(--ch-h);
+  }
+  .ch-bottom .ch-sound {
+    position: relative;
+    padding: 0 10px;
+  }
+  .ch-sound-ic .px {
+    width: 20px;
+    height: 14px;
+  }
+  .ch-bottom .ch-sound-txt {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .ch-level {
+    padding: 3px 4px;
+    gap: 0;
+  }
+  .ch-read {
+    display: none;
+  }
+  .ch-pip {
+    width: 26px;
+    height: 26px;
+  }
+  .ch-pip-b {
+    width: 20px;
+    height: 18px;
+    font-size: 10px;
+  }
+  /* the pause menu, compact (it still scrolls if it must) */
+  .ch-menu {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  }
+  .ch-menu-body {
+    justify-content: flex-start;
+    padding-top: 0;
+    flex: none;
+  }
+  .ch-paused {
+    margin: 4px 0 10px;
+    font-size: 38px;
+    text-shadow:
+      3px 3px 0 var(--void),
+      5px 5px 0 var(--magenta);
+  }
+  .ch-menu-win {
+    padding: 8px 8px 6px;
+  }
+  .ch-ml {
+    min-height: 40px;
+  }
+  .ch-menu-foot {
+    margin-top: 12px;
+  }
+  .ch-menu-cta {
+    height: 42px;
+  }
+  .ch-menu-mail {
+    margin-top: 8px;
+  }
+  .ch-menu-mail a {
+    font-size: 20px;
+  }
+}
+/* wide enough: PAUSED sits up in the top row between the brand and Resume,
+   and the levels run in two columns, so the whole menu fits one screen */
+@media (orientation: landscape) and (max-height: 500px) and (min-width: 560px) {
+  .ch-menu-top {
+    z-index: 1;
+    pointer-events: none;
+  }
+  .ch-menu-top > * {
+    pointer-events: auto;
+  }
+  .ch-menu-body {
+    max-width: 660px;
+    margin-top: calc(-1 * var(--ch-h));
+  }
+  .ch-paused {
+    display: flex;
+    align-items: center;
+    height: var(--ch-h);
+    margin: 0 0 12px;
+  }
+  .ch-menu-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(4, auto);
+    grid-auto-flow: column;
+    column-gap: 8px;
+  }
+}
+@media (orientation: landscape) and (max-height: 340px) {
+  .ch-ml {
+    min-height: 36px;
+  }
+  .ch-menu-k {
+    margin-bottom: 2px;
   }
 }
 
@@ -1033,7 +1245,7 @@ html.is-rotate #track:focus-within {
 }
 .rot-tag {
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 10px;
   text-transform: uppercase;
 }
 .rot-card {
@@ -1147,7 +1359,8 @@ html.is-rotate #track:focus-within {
   height: 26%;
   pointer-events: none;
   background: linear-gradient(180deg, transparent, rgba(0, 255, 133, 0.035) 50%, transparent);
-  animation: ld-roll 5.5s linear infinite;
+  /* one pass (the boot is over well before it ends): no endless motion */
+  animation: ld-roll 4.8s linear 1 both;
 }
 @keyframes ld-roll {
   to {
@@ -1174,11 +1387,9 @@ html.is-rotate #track:focus-within {
   line-height: 1.12;
   text-shadow: 0 0 6px rgba(0, 255, 133, 0.25);
 }
-/* the boot text is gone once the title lands (display, not visibility:
+/* the boot text is gone once the iris has closed (display, not visibility:
    its lines set their own visibility) */
-.ld[data-phase='title'] :is(.ld-boot, .ld-oem, .ld-foot),
-.ld[data-phase='iris'] :is(.ld-boot, .ld-oem, .ld-foot),
-.ld[data-phase='open'] :is(.ld-boot, .ld-oem, .ld-foot, .ld-title) {
+.ld[data-phase='open'] :is(.ld-boot, .ld-oem, .ld-foot) {
   display: none;
 }
 /* the OEM logo, top-right like an old BIOS splash */
@@ -1190,6 +1401,10 @@ html.is-rotate #track:focus-within {
 .ld-oem .px-mark {
   width: 120px;
   height: 120px;
+}
+/* GET READY: the OEM mark hops once, and the iris then closes on it */
+.ld[data-phase='ready'] .ld-oem .px-mark {
+  animation: ui-hop 0.36s steps(3, end) 0.12s 1;
 }
 .ld-foot {
   position: absolute;
@@ -1271,7 +1486,8 @@ html.is-rotate #track:focus-within {
 }
 .ld-ell i {
   font-style: normal;
-  animation: ui-blink 0.9s steps(1, end) infinite;
+  /* a few blinks, then the dots hold (never endless) */
+  animation: ui-blink 0.9s steps(1, end) 5;
 }
 .ld-ell i:nth-child(2) {
   animation-delay: 0.15s;
@@ -1284,10 +1500,10 @@ html.is-rotate #track:focus-within {
   margin-left: 0.5em;
   color: var(--signal);
 }
-.ld[data-phase='loaded'] .ld-load-ok {
+.ld:is([data-phase='loaded'], [data-phase='ready'], [data-phase='iris']) .ld-load-ok {
   display: inline;
 }
-.ld[data-phase='loaded'] .ld-ell i {
+.ld:is([data-phase='loaded'], [data-phase='ready'], [data-phase='iris']) .ld-ell i {
   animation: none;
 }
 .ld-bar {
@@ -1323,129 +1539,34 @@ html.is-rotate #track:focus-within {
 }
 .ld.is-slow .ld-slow {
   visibility: visible;
-  animation: ui-blink 1.4s steps(1, end) infinite;
+  animation: ui-blink 1.4s steps(1, end) 3;
 }
-
-.ld-title {
-  position: absolute;
-  inset: 0;
+/* the hand-off line: no PRESS START here (the hero title screen has the real one) */
+.ld-ready {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 0 var(--gutter) 4vh;
-  visibility: hidden;
-  text-align: center;
-}
-.ld[data-phase='title'] .ld-title,
-.ld[data-phase='iris'] .ld-title {
-  visibility: visible;
-}
-.ld-logo {
-  position: relative;
-  display: block;
-  margin-bottom: 10px;
-}
-/* four twinkling pixel stars around the title logo */
-.ld-sparks i {
-  position: absolute;
-  display: block;
-  color: var(--gold);
-  animation: ld-twinkle 1.2s steps(1, end) infinite;
-  animation-delay: calc(var(--i) * -0.3s);
-}
-.ld-sparks .px {
-  width: 21px;
-  height: 21px;
-}
-.ld-sparks i:nth-child(1) {
-  left: -46px;
-  top: 18%;
-}
-.ld-sparks i:nth-child(2) {
-  right: -50px;
-  top: 58%;
-  color: var(--cyan);
-}
-.ld-sparks i:nth-child(3) {
-  left: 12%;
-  bottom: -18px;
-  color: var(--cream);
-}
-.ld-sparks i:nth-child(4) {
-  right: 8%;
-  top: -22px;
-  color: var(--magenta);
-}
-@keyframes ld-twinkle {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  33% {
-    transform: scale(0.43);
-  }
-  66% {
-    opacity: 0;
-  }
-}
-.ld-copy {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(22px, 6vh, 64px));
-  margin: 0;
-  font-family: var(--font-sans);
-  font-size: clamp(20px, 1.6vw, 24px);
-  color: var(--steel);
-}
-.ld-logo .px-mark {
-  width: 170px;
-  height: 170px;
-}
-.ld-word {
-  margin: 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(36px, 5vw, 58px);
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.6em;
+  margin: 0.7em 0 0;
+  font-size: 1.5em;
   line-height: 1;
+  visibility: hidden;
+}
+.ld-ready-k {
   color: var(--cream);
-  text-shadow:
-    3px 3px 0 var(--void),
-    6px 6px 0 var(--magenta);
 }
-.ld-tag {
-  margin: 4px 0 0;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(255, 244, 216, 0.86);
-}
-.ld-start {
-  margin: 26px 0 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(20px, 2.2vw, 26px);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.ld-ready-t {
   color: var(--gold);
   text-shadow: 3px 3px 0 var(--void);
-  visibility: hidden;
 }
-.ld.is-landed .ld-start {
+.ld[data-phase='ready'] .ld-ready,
+.ld[data-phase='iris'] .ld-ready {
   visibility: visible;
-  animation: ui-blink 0.8s steps(1, end) infinite;
 }
-.ld-flash {
-  position: absolute;
-  inset: 0;
-  background: #fff;
-  opacity: 0;
-  pointer-events: none;
+.ld[data-phase='ready'] .ld-ready {
+  animation: ch-drop 0.24s steps(3, end) both;
 }
+
 .ld-iris {
   position: absolute;
   left: 0;
@@ -1464,18 +1585,8 @@ html.is-rotate #track:focus-within {
     width: 60px;
     height: 60px;
   }
-  .ld-sparks i:nth-child(1) {
-    left: -24px;
-  }
-  .ld-sparks i:nth-child(2) {
-    right: -26px;
-  }
   .ld-head {
     padding-right: 72px;
-  }
-  .ld-logo .px-mark {
-    width: 136px;
-    height: 136px;
   }
   .ld-segs {
     gap: 2px;
@@ -1507,9 +1618,9 @@ html.is-rotate #track:focus-within {
   .ch-menu-cta:hover .ch-coin,
   .rot-phone,
   .ld-ell i,
-  .ld-start,
-  .ld.is-landed .ld-start,
-  .ld-sparks i,
+  .ld-ready,
+  .ld[data-phase='ready'] .ld-ready,
+  .ld[data-phase='ready'] .ld-oem .px-mark,
   .ld-screen::before,
   .ld.is-slow .ld-slow,
   .fb-st {
@@ -1546,7 +1657,9 @@ html.no-webgl #stages {
   color: var(--void);
   font-family: var(--font-sans);
 }
-.fb a {
+/* plain links take the page's ink; buttons and cartridges keep their own
+   colours (a bare `.fb a` would outrank .hud-btn / .fb-cart) */
+.fb a:where(:not(.hud-btn, .fb-cart)) {
   color: inherit;
 }
 
@@ -1590,7 +1703,7 @@ html.no-webgl #stages {
 }
 .fb-sub {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }

@@ -15,7 +15,7 @@ import './process.css'
  * WORLD MAP — the process chapter as a 16-bit overworld (see timeline.ts for
  * the beat sheet). The island is one faceted mesh; the player walks the
  * dotted path node to node; each node flips to CLEAR!; a RESULTS screen
- * tallies the stats; the iris closes on the player.
+ * tallies the stats; WORLD CLEAR! and the iris closes on the player's face.
  */
 
 const DEG = Math.PI / 180
@@ -24,6 +24,28 @@ const _right = new THREE.Vector3()
 const _up = new THREE.Vector3()
 const _v = new THREE.Vector3()
 const _pt = { x: 0, z: 0, dx: 0, dz: 0 }
+const _face = new THREE.Vector3()
+const _zero = new THREE.Vector3()
+const _ps: T.PlayerAt = { s: 0, walking: false, seg: -1 }
+
+function setShot(o: T.Shot, x: number, y: number, z: number, w: number, h: number, el: number) {
+  o.x = x
+  o.y = y
+  o.z = z
+  o.w = w
+  o.h = h
+  o.el = el
+  o.fov = 24
+}
+
+type Rect = { left: number; top: number; right: number; bottom: number }
+/** a ~140×34 px tag at (x, y) would sit under window r */
+const hitRect = (r: Rect | null, x: number, y: number) => !!r && x + 70 > r.left && x - 70 < r.right && y + 30 > r.top && y - 4 < r.bottom
+/** node-clear juice only at walking pace (local/s ≈ 1.5 vh/s), never on a fling */
+const WALK_RATE = 0.7
+/** one soft flash at most, and never two within this long */
+const FLASH_GAP = 0.6
+const FLASH_AMP = 0.12
 
 const lerpBand = (a: Band, b: Band, t: number, out: Band) => {
   out.l = lerp(a.l, b.l, t)
@@ -79,9 +101,14 @@ export default function create(): Chapter {
   const shot: T.Shot = { ...T.OVERVIEW }
   const sA: T.Shot = { ...T.OVERVIEW }
   const sB: T.Shot = { ...T.OVERVIEW }
+  const startShot: T.Shot = { ...T.OVERVIEW }
+  const endShot: T.Shot = { ...T.OVERVIEW }
+  const resShot: T.Shot = { ...T.OVERVIEW }
   const band: Band = { l: 0, r: 1, t: 0, b: 1 }
   const bA: Band = { l: 0, r: 1, t: 0, b: 1 }
   const screen: Band = { l: 0, r: 1, t: 0, b: 1 }
+  /** the finale frames the player low, under the WORLD CLEAR! banner */
+  const endBand: Band = { l: 0, r: 1, t: 0, b: 1 }
   const proj = new THREE.PerspectiveCamera(24, 1, 0.1, 3000)
 
   // short "juice" events (stars, shake, flash) fired on forward crossings
@@ -89,14 +116,41 @@ export default function create(): Chapter {
   let shakeT0 = -99
   let shakeAmp = 0
   let flashT0 = -99
+  let lastFlash = -99
   let fireN = -1
+  let enterT = -1
+  let camDist = 20
+  let parallax = 0.25
   const tagPts: ({ x: number; y: number } | null)[] = [null, null, null, null, null]
+  const tagXY = [0, 1, 2, 3, 4].map(() => ({ x: 0, y: 0 }))
   const tagState: ('' | 'cur' | 'clear')[] = ['', '', '', '', '']
   const tagWorld = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]
   const burstAt = new THREE.Vector3()
 
-  /** the follow shot: the player's smoothed path position, buildings in view */
-  function followShot(s: number, W: number, out: T.Shot, fb: Band) {
+  /** proj = this frame's camera (incl. the engine's pointer parallax) */
+  function syncProj(W: number, H: number, frame: Frame) {
+    proj.fov = camFov
+    proj.aspect = W / H
+    proj.updateProjectionMatrix()
+    proj.position.copy(camPos)
+    proj.up.set(0, 1, 0)
+    proj.lookAt(camTarget)
+    if (parallax > 0) {
+      proj.updateMatrixWorld()
+      _right.setFromMatrixColumn(proj.matrixWorld, 0)
+      _up.setFromMatrixColumn(proj.matrixWorld, 1)
+      proj.position.addScaledVector(_right, frame.pointer.x * parallax).addScaledVector(_up, frame.pointer.y * parallax * 0.6)
+      proj.lookAt(camTarget)
+    }
+    proj.updateMatrixWorld()
+  }
+
+  /**
+   * the follow shot: the player's smoothed path position, buildings in view.
+   * look (0..1) leans the aim north + up, toward the castle tower, while its
+   * last course stacks in.
+   */
+  function followShot(s: number, look: number, out: T.Shot, fb: Band) {
     let x = 0
     let z = 0
     for (const o of [-1.4, 0, 1.4]) {
@@ -109,13 +163,12 @@ export default function create(): Chapter {
     const bw = Math.max(120, fb.r - fb.l)
     const w = clamp(bw / 66, 6.4, 13.5)
     out.x = x
-    out.y = T.groundAt(x, z) * 0.6 + 0.5
-    out.z = z - 1.3
+    out.y = T.groundAt(x, z) * 0.6 + 0.5 + look * 0.3
+    out.z = z - 1.3 - look * 1.0
     out.w = w
     out.h = w * 0.62
     out.el = 52
     out.fov = 24
-    void W
     return out
   }
 
@@ -181,6 +234,8 @@ export default function create(): Chapter {
       const l = clamp(local)
       const calm = frame.reducedMotion
       const time = frame.time
+      if (enterT < 0) enterT = time
+      const since = time - enterT
       const W = Math.max(1, frame.width)
       const H = Math.max(1, frame.height)
       if (measure && (Math.abs(measuredW - W) > 1 || Math.abs(measuredH - H) > 1)) measure()
@@ -201,15 +256,19 @@ export default function create(): Chapter {
       w.stars = 0
 
       // ---- player along the path
-      const ps = T.playerS(l)
+      const ps = T.playerS(l, _ps)
       T.pathAt(ps.s, _pt)
       const px = _pt.x
       const pz = _pt.z
       const py = T.groundAt(px, pz)
 
-      // ---- events: forward crossings only, never on jumps
+      // ---- events: forward crossings only, never on jumps. Stars on every
+      // clear; the shake only at walking pace; ONE soft white flash, on the
+      // final clear, at walking pace, rate-limited (WCAG 2.3.1: a fling past
+      // four nodes must not strobe)
       const dl = l - prevLocal
       const scrolling = prevLocal >= 0 && dl > 0 && dl < 0.06
+      const walking = scrolling && dl / Math.max(frame.dt, 1 / 240) < WALK_RATE
       if (nodes && stars) {
         for (let i = 0; i < 4; i++) {
           const c = T.CLEAR[i]
@@ -217,9 +276,14 @@ export default function create(): Chapter {
             burstAt.copy(nodes.pads[i]).add(_v.set(0, 0.7, 0))
             if (!calm) {
               stars.fire(i, burstAt, time)
-              shakeT0 = time
-              shakeAmp = i === 2 ? 0.16 : 0.09
-              flashT0 = time
+              if (walking) {
+                shakeT0 = time
+                shakeAmp = i === 2 ? 0.14 : 0.08
+              }
+              if (walking && i === 3 && time - lastFlash > FLASH_GAP) {
+                flashT0 = time
+                lastFlash = time
+              }
             }
           }
           if (l < c) stars.clear(i)
@@ -233,18 +297,25 @@ export default function create(): Chapter {
         screen.r = W
         screen.t = 0
         screen.b = H
-        const START = nodes?.start ?? new THREE.Vector3()
-        const startShot: T.Shot = { x: START.x, y: 0.95, z: START.z, w: 4.6, h: 3.4, el: 60, fov: 24 }
-        const n4 = nodes?.pads[3] ?? new THREE.Vector3()
-        const endShot: T.Shot = { x: n4.x, y: n4.y + 1.1, z: n4.z, w: 3.6, h: 2.8, el: 62, fov: 24 }
+        endBand.l = 0
+        endBand.r = W
+        endBand.t = H * 0.18
+        endBand.b = H
+        const START = nodes?.start ?? _zero
+        setShot(startShot, START.x, 0.95, START.z, 4.6, 3.4, 60)
+        const n4 = nodes?.pads[3] ?? _zero
+        setShot(endShot, n4.x, n4.y + 1.1, n4.z, 3.6, 2.8, 62)
         const over = sA
         Object.assign(over, T.OVERVIEW)
         if (L.portrait) {
           over.w = 26
           over.x = 0.3
         }
-        const resShot: T.Shot = { ...over, w: over.w * 1.02, el: 58 }
-        const follow = followShot(ps.s, W, sB, L.follow)
+        Object.assign(resShot, over)
+        resShot.w = over.w * 1.02
+        resShot.el = 58
+        const look = smoothstep(T.STACK[0] - 0.02, T.STACK[0], l) * (1 - smoothstep(T.CLEAR[2] + 0.004, T.CLEAR[2] + 0.03, l))
+        const follow = followShot(ps.s, look, sB, L.follow)
         const [f0, f1] = T.CAM.follow
         const [r0, r1] = T.CAM.results
         if (l < T.CAM.startOut[1]) {
@@ -273,9 +344,10 @@ export default function create(): Chapter {
           const k = clamp((l - T.CAM.end[0]) / (T.CAM.end[1] - T.CAM.end[0]))
           const e = k * k * (3 - 2 * k)
           T.mixShot(resShot, endShot, e, shot)
-          lerpBand(L.full, screen, 1 - (1 - e) * (1 - e), band)
+          lerpBand(L.full, endBand, 1 - (1 - e) * (1 - e), band)
         }
         const dist = applyShot(shot, W, H, band, camPos, camTarget)
+        camDist = dist
         camFov = shot.fov
         // stepped screen shake (30 fps jitter, decays in 0.3 s)
         const sa = time - shakeT0
@@ -293,14 +365,17 @@ export default function create(): Chapter {
 
       // ---- post juice
       const fa = time - flashT0
-      if (!calm && fa >= 0 && fa < 0.12) p.flash = 0.28 * (1 - fa / 0.12)
+      if (!calm && fa >= 0 && fa < 0.12) p.flash = FLASH_AMP * (1 - fa / 0.12)
+      // no pointer parallax inside the iris windows, so the circle sits dead
+      // on the face
+      parallax = calm ? 0 : 0.25 * smoothstep(0.03, 0.08, l) * (1 - smoothstep(0.9, 0.94, l))
 
       // ---- world
       water?.tick(time)
       boat?.update(time, calm)
       const dive = smoothstep(T.CAM.follow[0] - 0.02, T.CAM.follow[1], l) * (1 - smoothstep(T.CAM.results[0], T.CAM.results[1], l))
-      clouds?.update(time, calm, 1 + dive * 1.3)
-      nodes?.update(l, time, calm, ctx.camera)
+      clouds?.update(time, calm, 1 + dive * 1.3, camPos, camDist, Math.tan((camFov * DEG) / 2), W / H)
+      nodes?.update(l, time, calm, ctx.camera, since)
       dots?.update(ps.s)
       coins?.update(ps.s, time, calm)
       stars?.update(time, 0.85)
@@ -354,6 +429,15 @@ export default function create(): Chapter {
           cheer: party || hop > 0.2,
           marker: l > 0.015 && l < T.CARD_OUT,
         })
+        // the iris opens (in-beat) and shuts (out-beat) on Player 1's face
+        if (l < 0.1 || l > 0.9) {
+          syncProj(W, H, frame)
+          player.faceWorld(_face).project(proj)
+          if (Number.isFinite(_face.x + _face.y) && _face.z < 1) {
+            p.irisX = clamp(_face.x * 0.5 + 0.5, 0.15, 0.85)
+            p.irisY = clamp(_face.y * 0.5 + 0.5, 0.15, 0.85)
+          }
+        }
       }
 
       // ---- HUD
@@ -365,24 +449,12 @@ export default function create(): Chapter {
         const headOn = l >= T.HEAD[0] && l < T.HEAD[1] && !(L.compact && card >= 0)
         hud.setHead(headOn)
         hud.setResults(l >= T.RESULTS[0] && l < T.RESULTS[1], time, calm)
+        hud.setWon(l >= T.WON)
 
         // tags under the nodes: exact projection with this frame's camera
         const tagsOn = l >= 0.075 && l < T.CARD_OUT - 0.005
         if (tagsOn) {
-          proj.fov = camFov
-          proj.aspect = W / H
-          proj.updateProjectionMatrix()
-          proj.position.copy(camPos)
-          proj.up.set(0, 1, 0)
-          proj.lookAt(camTarget)
-          if (!calm) {
-            proj.updateMatrixWorld()
-            _right.setFromMatrixColumn(proj.matrixWorld, 0)
-            _up.setFromMatrixColumn(proj.matrixWorld, 1)
-            proj.position.addScaledVector(_right, frame.pointer.x * 0.25).addScaledVector(_up, frame.pointer.y * 0.25 * 0.6)
-            proj.lookAt(camTarget)
-          }
-          proj.updateMatrixWorld()
+          syncProj(W, H, frame)
           const hr = headOn ? L.headRect : null
           const cr = card >= 0 ? L.cardRect : null
           for (let i = 0; i < 5; i++) {
@@ -392,8 +464,12 @@ export default function create(): Chapter {
             const inBand = x > band.l - 30 && x < band.r + 30 && x > 8 && x < W - 8 && y > band.t - 10 && y < band.b + 10 && _v.z < 1
             // keep the tag on screen (its node still is)
             const tx = clamp(x, 60, W - 60)
-            const hit = (r: Layout['headRect'] | null) => !!r && tx + 70 > r.left && tx - 70 < r.right && y + 30 > r.top && y - 4 < r.bottom
-            tagPts[i] = Number.isFinite(x) && Number.isFinite(y) && inBand && !hit(hr) && !hit(cr) ? { x: tx, y } : null
+            const ok = Number.isFinite(x) && Number.isFinite(y) && inBand && !hitRect(hr, tx, y) && !hitRect(cr, tx, y)
+            if (ok) {
+              tagXY[i].x = tx
+              tagXY[i].y = y
+            }
+            tagPts[i] = ok ? tagXY[i] : null
             tagState[i] = i === 0 ? '' : T.cleared(l, i - 1) ? 'clear' : card === i - 1 ? 'cur' : ''
           }
         } else for (let i = 0; i < 5; i++) tagPts[i] = null
@@ -406,11 +482,12 @@ export default function create(): Chapter {
       out.target.copy(camTarget)
       out.fov = camFov
       out.roll = 0
-      out.parallax = frame.reducedMotion ? 0 : 0.25
+      out.parallax = frame.reducedMotion ? 0 : parallax
     },
 
     onEnter() {
       prevLocal = -1
+      enterT = -1
     },
   }
 }

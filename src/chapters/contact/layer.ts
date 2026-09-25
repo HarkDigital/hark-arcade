@@ -26,8 +26,8 @@ export class PixelLayer {
   H = 1
   /** CSS px the canvas overhangs the top of the screen */
   off = 0
-  /** a redraw key; draw only when it changes */
-  key = ''
+  /** a redraw signature; draw only when it changes (NaN: always redraw) */
+  key = NaN
 
   private ctxOpts: CanvasRenderingContext2DSettings
 
@@ -99,7 +99,7 @@ export class PixelLayer {
       this.mat.uniforms.uMap.value = this.tex
     }
     this.ctx.imageSmoothingEnabled = false
-    this.key = ''
+    this.key = NaN
     return true
   }
 

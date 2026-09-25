@@ -12,6 +12,7 @@ import {
   drawNeonText,
   drawRadial,
   drawSkyline,
+  fontsReady,
   marqueeUv,
 } from './art'
 import { screenMaterial, type ScreenUniforms } from './screen'
@@ -19,7 +20,7 @@ import { screenMaterial, type ScreenUniforms } from './screen'
 /*
  * THE ARCADE HALL. A row of upright cabinets on cosmic carpet in front of a
  * wall of tall windows (the Philadelphia skyline outside), neon in the
- * windows. Cabinet k stands at x = cabX(k), facing +z; the high-score machine
+ * windows. Cabinet k stands at x = cabX(k), facing +z; the multi-game machine
  * closes the row.
  *
  * Draw calls: every static solid is ONE merged vertex-coloured toon mesh,
@@ -372,6 +373,8 @@ export async function buildHall(
   await tick()
 
   // ---------------------------------------------------------------- neon signs
+  // sign canvases are sized from the glyph metrics, so give the pixel face a moment
+  await Promise.race([fontsReady(), new Promise<void>(r => setTimeout(r, 1500))])
   const signs: Hall['signs'] = []
   const repaints: (() => void)[] = [attract.paint, marquees.paint]
   const texs: THREE.Texture[] = []
@@ -384,27 +387,24 @@ export async function buildHall(
     signs.push({ mesh: m, base: glowK, flicker })
     texs.push(tex)
   }
-  const signZ = WZ + 0.04
   {
     const SY = 3.72
     const inWin = WZ - 0.2
+    // hung in front of the windows, clear of the pillars (so a word may span one)
+    const hang = WZ + 0.1
     const mark = drawNeonMark(P.signal)
     addSign(mark, 1.1, 1.1, cabXOf(0, n), SY, inWin, 1.3)
-    const tag = drawNeonText('MAKE THE INTERNET LISTEN.', P.magenta, 26)
-    repaints.push(tag.paint)
-    const th = 0.62
-    addSign(tag.tex, th * tag.aspect, th, (cabXOf(3, n) + cabXOf(4, n)) / 2, 5.0, signZ, 1.3, true)
-    const play = drawNeonText('PLAY', P.cyan, 26)
-    repaints.push(play.paint)
-    addSign(play.tex, 0.56 * play.aspect, 0.56, cabXOf(2, n), SY, inWin, 1.3)
-    if (!mobile) {
-      const up = drawNeonText('1UP', P.gold, 26)
-      repaints.push(up.paint)
-      addSign(up.tex, 0.56 * up.aspect, 0.56, cabXOf(4, n), SY, inWin, 1.3, true)
+    const sign = (text: string, tube: string, h: number, x: number, y: number, z: number, flicker = false) => {
+      const s = drawNeonText(text, tube, 40)
+      repaints.push(s.paint)
+      addSign(s.tex, h * s.aspect, h, x, y, z, 1.15, flicker)
     }
-    const hi = drawNeonText('HI-SCORES', P.gold, 26)
-    repaints.push(hi.paint)
-    addSign(hi.tex, 0.46 * hi.aspect, 0.46, cabXOf(n, n) + 1.75, SY - 0.35, inWin, 1.3)
+    // the hall's name, big on the wall above the windows (wide shots)
+    sign('ARCADE', P.magenta, 0.8, (cabXOf(2, n) + cabXOf(3, n)) / 2 + 1.2, 5.15, WZ + 0.04, true)
+    // over the gaps between machines, so they never sit behind Player 1's head
+    sign('PLAY', P.cyan, 0.44, cabXOf(2, n) + S / 2, 3.3, hang)
+    if (!mobile) sign('TURBO', P.coral, 0.44, cabXOf(4, n) + S / 2, 3.3, hang, true)
+    sign('1UP', P.gold, 0.44, cabXOf(n, n) + 1.25, SY - 0.1, hang)
   }
   textures.push(...texs)
 
@@ -483,5 +483,5 @@ export async function buildHall(
   }
 }
 
-/** The radial texture is shared with the critter's shadow. */
+/** The radial texture is shared with Player 1's shadow. */
 export { drawRadial }

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { P } from '../../kit/pixel'
+import { PLAYER1 } from '../../kit/player1'
 import { Vox, voxMaterial } from './vox'
 
 /*
@@ -38,20 +39,33 @@ export interface Look {
   shorts?: boolean
   /** portrait backdrop */
   bg: string
+  /** eye / blush colours (default void / coral) */
+  eyes?: string
+  cheeks?: string
+  /** 'hood' style: the shaded inside of the hood that frames the face */
+  lining?: string
 }
 
 const SKIN = P.cream
 
+/**
+ * Player 1, from the shared spec (kit/player1.ts): signal-green hoodie with
+ * the hood up, void headphone band + white cups over it, cream face, indigo
+ * trousers, white trainers.
+ */
 export const PLAYER_LOOK: Look = {
-  skin: SKIN,
-  hair: P.signal,
+  skin: PLAYER1.face,
+  eyes: PLAYER1.eyes,
+  cheeks: PLAYER1.cheeks,
+  hair: PLAYER1.hood,
+  lining: PLAYER1.hoodShade,
   style: 'hood',
-  shirt: P.signal,
-  pants: P.indigo,
-  shoes: P.white,
+  shirt: PLAYER1.hood,
+  pants: PLAYER1.pants,
+  shoes: PLAYER1.shoes,
   hat: 'phones',
-  hatA: P.void,
-  hatB: P.white,
+  hatA: PLAYER1.phonesBand,
+  hatB: PLAYER1.phonesCup,
   extras: ['hood'],
   bg: P.pine,
 }
@@ -103,14 +117,10 @@ function buildBody(l: Look) {
     v.box(-1, 6, 2, 0, 6, 2, l.kit!)
   }
   if (ex.has('hood')) {
-    // hoodie: drawstrings in front, a little gold Hark diamond on the back
+    // hoodie: drawstrings and a pouch pocket in front
     v.set(-1, 5, 2, P.white)
     v.set(0, 5, 2, P.white)
     v.box(-1, 3, 2, 0, 3, 2, l.shirt)
-    v.set(-1, 5, -3, P.gold)
-    v.set(0, 5, -3, P.gold)
-    v.set(-1, 4, -3, P.gold)
-    v.set(0, 4, -3, P.gold)
   }
   if (ex.has('cape')) {
     v.box(-3, 2, -3, 2, 6, -3, l.kit!)
@@ -131,10 +141,12 @@ function buildBody(l: Look) {
   // head
   v.box(-4, 7, -3, 3, 13, 2, l.skin)
   // eyes (2 tall), blush
-  v.box(-2, 9, 2, -2, 10, 2, P.void)
-  v.box(1, 9, 2, 1, 10, 2, P.void)
-  v.set(-3, 8, 2, P.coral)
-  v.set(2, 8, 2, P.coral)
+  const eyes = l.eyes ?? P.void
+  const cheeks = l.cheeks ?? P.coral
+  v.box(-2, 9, 2, -2, 10, 2, eyes)
+  v.box(1, 9, 2, 1, 10, 2, eyes)
+  v.set(-3, 8, 2, cheeks)
+  v.set(2, 8, 2, cheeks)
   if (ex.has('glasses')) {
     v.box(-3, 11, 2, -1, 11, 2, P.night)
     v.box(0, 11, 2, 2, 11, 2, P.night)
@@ -152,18 +164,21 @@ function buildBody(l: Look) {
   v.set(3, 11, 2, h)
   v.set(-1, 11, 2, h)
   if (style === 'hood') {
-    // hood up: green all round, a brown fringe peeking out, a point at the back
+    // hood up all round, its shaded lining framing the face (no hair shows),
+    // a little point at the back
+    const lining = l.lining ?? h
     v.box(-4, 7, -3, -4, 13, 2, h)
     v.box(3, 7, -3, 3, 13, 2, h)
     v.box(-3, 13, -3, 2, 14, 2, h)
-    v.box(-2, 15, -2, 1, 15, 0, h)
+    v.box(-2, 15, -2, 1, 15, -1, h)
     v.box(-4, 12, 2, 3, 13, 2, h)
-    v.box(-3, 12, 2, 2, 12, 2, P.brown)
-    v.set(-2, 11, 2, P.brown)
-    v.set(1, 11, 2, P.brown)
+    v.box(-3, 12, 2, 2, 12, 2, lining)
+    v.set(-3, 11, 2, lining)
+    v.set(2, 11, 2, lining)
+    v.box(-2, 11, 2, 1, 11, 2, l.skin)
     v.set(-4, 11, 2, h)
     v.set(3, 11, 2, h)
-    v.set(-1, 11, 2, null)
+    // the rim stands a cell proud of the face
     v.box(-4, 7, 3, 3, 7, 3, h)
     v.box(-4, 8, 3, -4, 12, 3, h)
     v.box(3, 8, 3, 3, 12, 3, h)
@@ -223,12 +238,13 @@ function buildBody(l: Look) {
     v.box(1, 12, 3, 2, 12, 3, b)
   }
   if (l.hat === 'phones') {
-    // headphones: the listener
-    v.box(-5, 8, -1, -5, 10, 0, b)
-    v.box(4, 8, -1, 4, 10, 0, b)
-    v.box(-5, 11, -1, -5, 13, 0, a)
-    v.box(4, 11, -1, 4, 13, 0, a)
-    v.box(-4, 14, -1, 3, 14, 0, a)
+    // headphones over the hood (the listener): band `a` arcs over the top,
+    // chunky cups `b` over the ears, tops and fronts open to the camera
+    v.box(-4, 15, 0, 3, 15, 0, a)
+    v.box(-5, 12, 0, -5, 14, 0, a)
+    v.box(4, 12, 0, 4, 14, 0, a)
+    v.box(-6, 8, -1, -5, 11, 1, b)
+    v.box(4, 8, -1, 5, 11, 1, b)
   }
   return v
 }
@@ -255,7 +271,7 @@ function buildArm(l: Look, left: boolean) {
 /** mesh whose geometry is centred on `pivot` (cell space), inside a group placed at the pivot */
 function part(v: Vox, pivot: [number, number, number]) {
   const g = new THREE.Group()
-  const mesh = new THREE.Mesh(v.geometry(S, { ramp: 'figure', origin: [pivot[0] * S, pivot[1] * S, pivot[2] * S] }), voxMaterial())
+  const mesh = new THREE.Mesh(v.geometry(S, { ramp: 'figure', merge: true, origin: [pivot[0] * S, pivot[1] * S, pivot[2] * S] }), voxMaterial())
   g.add(mesh)
   g.position.set(pivot[0] * S, pivot[1] * S, pivot[2] * S)
   return g
@@ -286,14 +302,15 @@ export class Folk {
   readonly height: number
 
   constructor(public look: Look) {
-    const body = new THREE.Mesh(buildBody(look).geometry(S, { ramp: 'figure' }), voxMaterial())
+    // merged, never culled: figures turn round
+    const body = new THREE.Mesh(buildBody(look).geometry(S, { ramp: 'figure', merge: true }), voxMaterial())
     this.legL = part(buildLeg(look, true), [-1, 3, 0])
     this.legR = part(buildLeg(look, false), [1, 3, 0])
     this.armL = part(buildArm(look, true), [-3.5, 7, 0])
     this.armR = part(buildArm(look, false), [3.5, 7, 0])
     this.lift.add(body, this.legL, this.legR, this.armL, this.armR)
     this.root.add(this.lift)
-    this.height = (look.hat === 'hardhat' || look.hat === 'cap' || look.style === 'bun' ? 16 : 15) * S
+    this.height = (look.hat === 'hardhat' || look.hat === 'cap' || look.hat === 'phones' || look.style === 'bun' ? 16 : 15) * S
   }
 
   pose(p: FolkPose) {
@@ -366,10 +383,10 @@ export function paintPortrait(ctx: CanvasRenderingContext2D, l: Look, open: bool
   px(5, 4, 10, 10, l.skin)
   px(6, 13, 8, 1, l.skin)
   // eyes, blush, mouth
-  px(7, 8, 1, 2, P.void)
-  px(12, 8, 1, 2, P.void)
-  px(6, 11, 1, 1, P.coral)
-  px(13, 11, 1, 1, P.coral)
+  px(7, 8, 1, 2, l.eyes ?? P.void)
+  px(12, 8, 1, 2, l.eyes ?? P.void)
+  px(6, 11, 1, 1, l.cheeks ?? P.coral)
+  px(13, 11, 1, 1, l.cheeks ?? P.coral)
   if (open) {
     px(9, 11, 2, 2, P.void)
     px(9, 12, 2, 1, P.coral)
@@ -387,13 +404,14 @@ export function paintPortrait(ctx: CanvasRenderingContext2D, l: Look, open: bool
   px(14, 5, 2, 3, h)
   px(6, 5, 4, 1, h)
   if (l.style === 'hood') {
+    const lining = l.lining ?? h
     px(3, 2, 14, 3, h)
     px(4, 1, 12, 1, h)
     px(3, 5, 2, 9, h)
     px(15, 5, 2, 9, h)
-    px(5, 5, 10, 1, P.brown)
-    px(6, 6, 2, 1, P.brown)
-    px(12, 6, 2, 1, P.brown)
+    px(5, 5, 10, 1, lining)
+    px(5, 6, 1, 7, lining)
+    px(14, 6, 1, 7, lining)
   }
   if (l.style === 'spiky') {
     px(8, 0, 2, 2, h)

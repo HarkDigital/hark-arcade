@@ -12,6 +12,9 @@
   --ay: 30vh;
   --aw: 50vw;
   --ah: 50vh;
+  --wx: 50vw;
+  --wy: 50vh;
+  --ww: 40vw;
 }
 
 .stage-shield .bf-probe {
@@ -129,8 +132,9 @@
 .stage-shield .bf-bar--boss .bf-fill {
   background: repeating-linear-gradient(270deg, var(--coral) 0 9px, var(--magenta) 9px 12px);
 }
+/* low HP: five warning blinks (2 Hz), then it rests on the bar's own colour */
 .stage-shield .bf-bar.is-low .bf-fill {
-  animation: bf-low 0.5s steps(1, end) infinite;
+  animation: bf-low 0.5s steps(1, end) 5;
 }
 @keyframes bf-low {
   50% {
@@ -248,7 +252,10 @@
   color: var(--void);
   text-shadow: none;
   box-shadow: 3px 3px 0 var(--void);
-  animation: bf-blink 1s steps(1, end) infinite;
+}
+/* the '!' blinks five times as the window opens, then stays lit */
+.stage-shield .bf-alert.is-in .bf-bang {
+  animation: bf-blink 1s steps(1, end) 5;
 }
 .stage-shield .bf-log {
   margin: 0;
@@ -306,7 +313,9 @@
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
   border-top: 8px solid var(--signal);
-  animation: bf-nudge 0.8s steps(1, end) infinite;
+}
+.stage-shield .bf-dialog.is-in .bf-more {
+  animation: bf-nudge 0.8s steps(1, end) 5;
 }
 @keyframes bf-nudge {
   50% {
@@ -365,9 +374,12 @@
   visibility: visible;
 }
 
+/* laid out in JS (index.ts placeWarning): clear of the site and the chrome */
 .stage-shield .bf-warning {
-  top: calc(var(--ay) + var(--ah) * 0.7);
-  width: min(var(--aw), 760px);
+  left: var(--wx);
+  top: var(--wy);
+  width: var(--ww);
+  transform: none;
 }
 .stage-shield .bf-warn-band {
   position: relative;
@@ -395,16 +407,19 @@
 .stage-shield .bf-warn-word {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: clamp(40px, 6vw, 88px);
+  font-size: clamp(36px, min(6vw, 11vh), 88px);
   line-height: 0.95;
   text-transform: uppercase;
   color: var(--coral);
   text-shadow:
     0.05em 0.05em 0 var(--void),
     0.08em 0.08em 0 var(--magenta);
-  animation: bf-alarm 0.6s steps(1, end) infinite;
 }
-/* alarm: the word swaps coral/gold (never disappears) at under 2 Hz */
+.stage-shield .bf-warning.is-in .bf-warn-word {
+  animation: bf-alarm 0.6s steps(1, end) 5;
+}
+/* alarm: the word swaps coral/gold (never disappears) at under 2 Hz, five
+   times, then rests on coral */
 @keyframes bf-alarm {
   50% {
     color: var(--gold);
@@ -457,7 +472,7 @@
   display: inline-block;
 }
 .stage-shield .bf-youwin.is-in .bf-win-word span {
-  animation: bf-wave 1.2s steps(2, end) infinite;
+  animation: bf-wave 1.2s steps(2, end) 4;
   animation-delay: calc(0.5s + var(--i) * 0.1s);
 }
 .stage-shield .bf-win-sub {
@@ -555,9 +570,6 @@
 .stage-shield .is-portrait .bf-247 {
   font-size: clamp(48px, 13vw, 88px);
 }
-.stage-shield .is-portrait .bf-warning {
-  top: calc(var(--ay) + var(--ah) + 18px);
-}
 .stage-shield .is-portrait .bf-warn-word {
   font-size: clamp(34px, 10vw, 64px);
 }
@@ -571,15 +583,96 @@
   }
 }
 
+/* short landscape (phones past the rotate card): a slimmer HP row, and the
+   windows drop their secondary lines so they fit between the chrome bands */
+@media (orientation: landscape) and (max-height: 500px) {
+  .stage-shield .bf {
+    --hp-h: 44px;
+  }
+  .stage-shield .bf-bar {
+    gap: 5px;
+  }
+  .stage-shield .bf-bar-head {
+    font-size: 10px;
+    gap: 6px;
+  }
+  .stage-shield .bf-icon {
+    width: 16px;
+    height: 16px;
+  }
+  .stage-shield .bf-meter {
+    height: 14px;
+    box-shadow: 4px 4px 0 rgba(11, 13, 20, 0.7);
+  }
+  .stage-shield .bf-vs {
+    font-size: 20px;
+    padding: 5px 7px 4px;
+  }
+  .stage-shield .bf-col {
+    top: calc(var(--safe-top) + var(--hp-h) + 14px);
+    bottom: calc(var(--safe-bottom) + 4px);
+  }
+  .stage-shield .bf-warn-sub,
+  .stage-shield .bf-copy > .bf-eyebrow,
+  .stage-shield .bf-card .bf-eyebrow,
+  .stage-shield .bf-more {
+    display: none;
+  }
+  .stage-shield .bf-warn-band {
+    padding: 18px 14px 16px;
+  }
+  .stage-shield .bf-alert {
+    padding: 20px 16px 14px;
+  }
+  .stage-shield .bf-alert-head {
+    font-size: 26px;
+    margin-bottom: 8px;
+  }
+  .stage-shield .bf-log {
+    font-size: 16px;
+  }
+  /* "Hacked? Breathe." on one line */
+  .stage-shield .bf-title {
+    font-size: clamp(30px, 9.5vh, 40px);
+  }
+  .stage-shield .bf-title br {
+    display: none;
+  }
+  .stage-shield .bf-title br + .rise-w {
+    margin-left: 0.28em;
+  }
+  .stage-shield .bf-dialog {
+    margin-top: 16px;
+    padding: 16px 14px 12px;
+  }
+  .stage-shield .bf-body,
+  .stage-shield .bf-stat-label {
+    font-size: 16px;
+  }
+  .stage-shield .bf-card {
+    gap: 10px;
+    padding: 14px 16px;
+  }
+  .stage-shield .bf-247 {
+    font-size: 44px;
+  }
+  .stage-shield .bf-cta {
+    margin-top: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stage-shield .bf-pop,
   .stage-shield .bf-hp {
     transition-delay: 0s !important;
   }
-  .stage-shield .bf-bang,
-  .stage-shield .bf-warn-word,
-  .stage-shield .bf-more,
+  .stage-shield .bf-alert.is-in .bf-bang,
+  .stage-shield .bf-warning.is-in .bf-warn-word,
+  .stage-shield .bf-warning.is-in .bf-warn-band,
+  .stage-shield .bf-dialog.is-in .bf-more,
   .stage-shield .bf-bar.is-low .bf-fill,
+  .stage-shield .bf-vs.is-ko,
+  .stage-shield .bf-youwin.is-in .bf-win-word,
   .stage-shield .bf-youwin.is-in .bf-win-word span {
     animation: none;
   }

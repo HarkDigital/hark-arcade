@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { P } from '../../kit/pixel'
 import { rng } from '../../core/math'
-import { BUSH_ART, BUSH_S_ART, COIN_ART, FLAG_ART, FLOWER_ARTS, HERO, ICONS, SIGN_ART } from './art'
+import { BUSH_ART, BUSH_S_ART, COIN_ART, FLAG_ART, FLOWER_ARTS, HERO, HERO_KEY, ICONS, SIGN_ART } from './art'
 import {
   artSprite,
   haloTexture,
@@ -235,10 +235,10 @@ export function buildLevel(mobile: boolean): Level {
     }
   })
 
-  /* ---------------- the player ---------------- */
+  /* ---------------- the player (PLAYER 1, drawn from kit/player1.ts) ---------------- */
   const heroFrames = {} as Record<keyof typeof HERO, THREE.BufferGeometry>
   for (const k of Object.keys(HERO) as (keyof typeof HERO)[]) {
-    heroFrames[k] = voxelGeometry(HERO[k], { size: HERO_VOXEL, depth: 4, anchor: 'bottom' })
+    heroFrames[k] = voxelGeometry(HERO[k], { size: HERO_VOXEL, depth: 4, anchor: 'bottom', map: HERO_KEY })
   }
   const hero = new THREE.Mesh(heroFrames.idle, voxelMaterial())
   root.add(hero)

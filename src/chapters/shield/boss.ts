@@ -183,6 +183,9 @@ interface Leg {
 const L1 = 1.4
 const L2 = 2.05
 const UP = new THREE.Vector3(0, 1, 0)
+const C_WHITE = new THREE.Color(P.white)
+const C_CORAL = new THREE.Color(P.coral)
+const C_GOLD = new THREE.Color(P.gold)
 
 export interface BossState {
   time: number
@@ -399,8 +402,8 @@ export class Boss {
     const beat = pace > 0 ? stepq(fract(t * 1.6), 4) : 0.5
     const k = 1 + 0.18 * (beat < 0.5 ? beat * 2 : 2 - beat * 2) + st.core * 0.35
     this.core.scale.setScalar(k)
-    this.coreMat.color.set(st.hit > 0.2 ? P.white : P.coral).multiplyScalar(1.6 + st.core)
-    this.coreInMat.color.set(P.gold).multiplyScalar(1.9 + st.core)
+    this.coreMat.color.copy(st.hit > 0.2 ? C_WHITE : C_CORAL).multiplyScalar(1.6 + st.core)
+    this.coreInMat.color.copy(C_GOLD).multiplyScalar(1.9 + st.core)
 
     // hit flash: bright, but capped so the bloom never blows out the arena
     const em = Math.min(0.62, st.hit * 0.62)

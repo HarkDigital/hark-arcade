@@ -6,7 +6,7 @@ import * as THREE from 'three'
  * opens into the website screenshot with a white flash, and a rolling sync bar
  * settles it. uBoot (0..1) is stepped on the CPU so the whole thing animates
  * on game frames. uStatic adds a burst of snow (channel switch on the
- * high-score machine).
+ * multi-game machine).
  *
  * Colours stay <= ~0.95 so the bloom pass (threshold ~1) leaves the site
  * itself crisp; the post pass palette-snaps it with everything else.

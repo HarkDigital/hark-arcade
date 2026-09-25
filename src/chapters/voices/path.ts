@@ -11,6 +11,9 @@ import * as THREE from 'three'
 
 export const SPAWN = new THREE.Vector2(0, 7)
 
+/** the fixed JRPG camera's downward tilt (it always looks north) */
+export const EL = THREE.MathUtils.degToRad(48)
+
 /** where the player stands to talk to villager k */
 export const STOPS = [
   [0, 1],

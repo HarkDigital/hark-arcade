@@ -99,7 +99,10 @@
   -webkit-text-stroke: 0.1em var(--void);
   paint-order: stroke fill;
   text-shadow: 0.08em 0.08em 0 var(--void);
-  animation: svc-blink 1.1s steps(1, end) infinite;
+}
+/* READY? blinks four times as the iris opens, then holds (never endless) */
+.stage-services .svc-ready.is-on .svc-ready-go {
+  animation: svc-blink 1.1s steps(1, end) 4;
 }
 @keyframes svc-blink {
   70% {
@@ -186,7 +189,10 @@
   border-top: 7px solid var(--signal);
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  animation: svc-bob 0.9s steps(2, end) infinite;
+}
+/* the hint arrow nudges a few times when the window opens, then rests */
+.stage-services .svc-intro.is-on .svc-hint-arrow {
+  animation: svc-bob 0.9s steps(2, end) 5;
 }
 @keyframes svc-bob {
   50% {
@@ -314,6 +320,43 @@
   box-shadow: 0 3px 0 var(--void);
 }
 
+/* ---------------- NEXT ▶ ? BLOCK 0k ---------------- */
+
+/* the card stands on the bottom of its column, so the 01–11 bar stays put
+   whatever the card shows, and the compact NEXT card leaves the sky (and
+   the item just collected, drifting away) in view above it */
+.stage-services .svc-card {
+  justify-content: flex-end;
+}
+/* wide: the card collapses to its head, the ?-block row and the bar (the
+   scene sits beside the card, so nothing reframes) */
+.stage-services .svc-card.is-next .svc-slide:not(.svc-next) {
+  display: none;
+}
+.stage-services .svc-next-get {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--signal);
+}
+.stage-services .svc-next-arrow {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 6px solid var(--void);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.stage-services .svc-next-frame {
+  background: var(--night);
+}
+.stage-services .svc-pip.is-next {
+  border-color: var(--signal);
+  color: var(--signal);
+  transform: translateY(-3px);
+  box-shadow: 0 3px 0 var(--void);
+}
+
 /* ---------------- POWER UP! ---------------- */
 
 .stage-services .svc-power {
@@ -368,9 +411,12 @@
   box-shadow: 3px 3px 0 var(--void);
 }
 
-/* ---------------- portrait / narrow: scene on top, windows at the bottom ---------------- */
+/* ---------------- portrait / narrow: scene on top, windows at the bottom ----------------
+   (hud.ts reads this same query as TALL_QUERY: keep the two in step. A phone
+   held sideways is short landscape, not tall: the windows sit beside the
+   scene there, see the last block) */
 
-@media (max-width: 767px), (max-aspect-ratio: 4/5) {
+@media (max-width: 767px) and (orientation: portrait), (max-width: 767px) and (min-height: 501px), (max-aspect-ratio: 4/5) {
   .stage-services .svc-col {
     top: auto;
     right: var(--gutter);
@@ -436,6 +482,39 @@
     height: 26px;
     font-size: 9px;
   }
+  /* tall: NEXT keeps the item card's size (the scene above is framed to the
+     card's top) and never adds to it (it lies over the hidden item slides),
+     so the ?-block stands centred in the room the item had */
+  .stage-services .svc-slides {
+    position: relative;
+  }
+  .stage-services .svc-card.is-next .svc-slide:not(.svc-next) {
+    display: block;
+  }
+  .stage-services .svc-next {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .stage-services .svc-next-top {
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+  }
+  .stage-services .svc-next-frame {
+    width: 100px;
+    height: 100px;
+  }
+  .stage-services .svc-next-frame img {
+    width: 80px;
+  }
+  .stage-services .svc-next-title {
+    font-size: clamp(1.9rem, 8.4vw, 2.6rem);
+  }
 }
 
 /* short landscape and small phones: tags go, the card stays whole */
@@ -445,9 +524,100 @@
   }
 }
 
+/* ---------------- short landscape: a phone after 'Continue anyway' ----------------
+   Only ~280px between the chrome bands: the windows go compact so the item's
+   name, its description and the 01–11 bar all fit (tags and hints go). */
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .stage-services .svc-col {
+    width: min(468px, max(38vw, 344px));
+  }
+  .stage-services .svc-win {
+    padding: 10px 12px;
+  }
+  .stage-services .svc-tags,
+  .stage-services .svc-hint {
+    display: none;
+  }
+  /* intro: title + the eleven items as a 6-up icon grid */
+  .stage-services .svc-intro-title {
+    font-size: 1.7rem;
+    margin: 4px 0 8px;
+  }
+  .stage-services .svc-inv-head {
+    font-size: 10px;
+    padding-top: 8px;
+    margin-bottom: 4px;
+  }
+  .stage-services .svc-inv {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 2px 4px;
+  }
+  .stage-services .svc-slot {
+    min-height: 28px;
+    gap: 3px;
+    padding: 1px 2px;
+    font-size: 9px;
+  }
+  .stage-services .svc-slot img {
+    width: 24px;
+    height: 24px;
+  }
+  .stage-services .svc-slot-name {
+    display: none;
+  }
+  /* the item card */
+  .stage-services .svc-card-head {
+    margin-bottom: 6px;
+  }
+  .stage-services .svc-count {
+    font-size: 11px;
+  }
+  .stage-services .svc-get {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+  .stage-services .svc-slide-top {
+    gap: 10px;
+  }
+  .stage-services .svc-frame {
+    width: 46px;
+    height: 46px;
+    box-shadow:
+      inset 0 0 0 3px var(--indigo),
+      inset 0 0 0 5px var(--void);
+  }
+  .stage-services .svc-frame img {
+    width: calc(var(--w, 16) * 2px);
+  }
+  .stage-services .svc-title {
+    font-size: 1.35rem;
+  }
+  .stage-services .svc-blurb {
+    margin: 8px 0 0;
+    font-size: 17px;
+    line-height: 1.1;
+  }
+  .stage-services .svc-bar {
+    gap: 3px;
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+  .stage-services .svc-pip {
+    height: 24px;
+    font-size: 9px;
+  }
+  .stage-services .svc-power {
+    gap: 8px;
+  }
+  .stage-services .svc-power-title {
+    font-size: 3.4rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .stage-services .svc-ready-go,
-  .stage-services .svc-hint-arrow,
+  .stage-services .svc-ready.is-on .svc-ready-go,
+  .stage-services .svc-intro.is-on .svc-hint-arrow,
   .stage-services .svc-power.is-on .svc-power-title {
     animation: none;
   }

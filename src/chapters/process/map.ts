@@ -51,7 +51,7 @@ function blockedTiles() {
     add(n.col, n.row, 1)
     for (let dc = -2; dc <= 2; dc++) for (let dr = -2; dr <= 2; dr++) add(n.bcol + dc, n.brow + dr)
   }
-  // castle + crane footprint on the plateau
+  // castle footprint (+ its forecourt) on the plateau
   for (let c = 16; c <= 23; c++) for (let r = 1; r <= 6; r++) add(c, r)
   // mountains
   for (let c = 1; c <= 9; c++) for (let r = 1; r <= 5; r++) add(c, r)

@@ -97,6 +97,11 @@ export class Dialogue {
   }
   private lines: Line[]
 
+  /** when the line on screen opened (frame time) */
+  get openedAt() {
+    return this.upAt
+  }
+
   /** layout height of the whole window incl. its tabs (stable across lines) */
   get height() {
     return this.root.offsetHeight

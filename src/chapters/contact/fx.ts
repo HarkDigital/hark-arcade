@@ -22,6 +22,20 @@ export interface Box {
   h: number
 }
 
+/**
+ * The gutters either side of the rolling credits (game px, x only): while
+ * the roll runs, bursts stay inside [l0, l1] or [r0, r1].
+ */
+export interface Lanes {
+  l0: number
+  l1: number
+  r0: number
+  r1: number
+}
+
+/** narrowest gutter (game px) that gets a burst at all */
+const LANE_MIN = 12
+
 type Ctx = CanvasRenderingContext2D
 
 function dot(ctx: Ctx, x: number, y: number, c: string, s = 1) {
@@ -151,10 +165,12 @@ function flare(ctx: Ctx, x: number, y: number, c: string, r: number) {
 /**
  * The credits fireworks show: shells launch on a fixed schedule; `amount`
  * (0..1, scroll-derived) decides which of them fire, so raising it adds
- * shells without moving the ones already in the air. Every 5th shell (once
- * the show is in full swing) bursts into the Hark mark.
+ * shells without moving the ones already in the air. With `lanes` (the roll
+ * is running) every shell bursts small, inside a gutter beside the credits;
+ * without (the end block) they burst anywhere, and every 5th one (once the
+ * show is in full swing) bursts into the Hark mark.
  */
-export function drawFireworks(ctx: Ctx, box: Box, t: number, amount: number, calm: boolean) {
+export function drawFireworks(ctx: Ctx, box: Box, t: number, amount: number, calm: boolean, lanes: Lanes | null) {
   if (amount <= 0.001 || box.w < 20 || box.h < 20) return
   const ts = Math.floor(t * 12) / 12
   const fstep = Math.floor(t * 12)
@@ -170,15 +186,31 @@ export function drawFireworks(ctx: Ctx, box: Box, t: number, amount: number, cal
     const t0 = k * INTERVAL + hash(k * 2.11) * 0.18
     const age = ts - t0
     if (age < 0 || age > span) continue
-    const bx = box.x + box.w * (0.12 + 0.76 * hash(k * 3.7))
+    let bx = box.x + box.w * (0.12 + 0.76 * hash(k * 3.7))
     const by = box.y + box.h * (0.14 + 0.4 * hash(k * 5.3))
-    const isMark = k % 5 === 0 && amount > 0.5 && box.w > 150 && box.h > 90
+    const isMark = !lanes && k % 5 === 0 && amount > 0.5 && box.w > 150 && box.h > 90
+    let radius = (isMark ? 0.62 : 0.3 + 0.2 * hash(k * 6.6)) * size * 0.5
+    // the rocket's sideways wobble
+    let wob = 12
+    if (lanes) {
+      const wl = lanes.l1 - lanes.l0
+      const wr = lanes.r1 - lanes.r0
+      let left = hash(k * 3.7) < 0.5
+      if (left && wl < LANE_MIN) left = false
+      else if (!left && wr < LANE_MIN) left = true
+      const a0 = left ? lanes.l0 : lanes.r0
+      const lw = left ? wl : wr
+      if (lw < LANE_MIN) continue
+      radius = Math.min(radius, Math.floor(lw / 2) - 2)
+      wob = Math.min(12, lw * 0.4)
+      bx = a0 + lw / 2 + (hash(k * 7.3) - 0.5) * Math.max(0, lw - 2 * radius - 4)
+    }
     const cols = isMark ? MARK_SHELL : SHELLS[Math.floor(hash(k * 9.1) * SHELLS.length)]
     if (age < RISE) {
       // the rocket: a bright head and a short sputtering tail
       const u = age / RISE
       const e = 1 - (1 - u) * (1 - u)
-      const sx = bx + (hash(k * 4.4) - 0.5) * 12 * (1 - e)
+      const sx = bx + (hash(k * 4.4) - 0.5) * wob * (1 - e)
       const y0 = box.y + box.h + 6
       const sy = y0 + (by - y0) * e
       dot(ctx, sx, sy, P.cream)
@@ -190,7 +222,6 @@ export function drawFireworks(ctx: Ctx, box: Box, t: number, amount: number, cal
     }
     const a = age - RISE
     const life = a / LIFE
-    const radius = (isMark ? 0.62 : 0.3 + 0.2 * hash(k * 6.6)) * size * 0.5
     const expand = 1 - Math.exp(-a * 4.6)
     const fall = a * a * (isMark ? 4 : 10)
     const stage = life < 0.1 ? 0 : life < 0.42 ? 1 : life < 0.72 ? 2 : 3

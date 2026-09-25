@@ -3,17 +3,19 @@ import { P, sprite } from '../../kit/pixel'
 import { rng } from '../../core/math'
 import { isInsideLogo } from '../../logo/logo'
 import { nextFrame } from '../../core/yield'
-import { Buf, SH, Vox, lin, place, voxMaterial } from './vox'
-import { STOPS, npcSpot, roadSegments } from './path'
+import { Buf, SH, TOP_DOWN, Vox, lin, place, voxMaterial, type EmitOpts } from './vox'
+import { EL, STOPS, npcSpot, roadSegments } from './path'
 
 /*
- * The village: a tile map (grass, a sandy road, a stream with a bridge, a
- * cobbled plaza), voxel houses facing the camera, a set piece behind each
- * villager (building site, taffy stall, gym yard, vineyard, glass workshop,
- * schoolhouse, a hero's house, a little software office), trees, fences and
- * flowers. Everything static merges into two draw calls (ground + props);
- * the living bits (water, chimney smoke, fountain, butterflies, glints) are
- * stepped at sprite frame rates.
+ * The Side Quests village: a tile map (grass, a sandy road, a stream with a
+ * bridge, a cobbled plaza), voxel houses facing the camera, a set piece behind
+ * each villager (building site, taffy stall, gym yard, vineyard, glass
+ * workshop, schoolhouse, a hero's house, a little software office), trees,
+ * fences and flowers, and a treasure chest by the last stop that pops open
+ * once every quest is done. Everything static merges into two draw calls
+ * (ground + props), keeping only the faces the fixed top-down camera can see,
+ * merged into rectangles; the living bits (water, chimney smoke, fountain,
+ * butterflies, glints, the chest) are stepped at sprite frame rates.
  */
 
 export const X0 = -19
@@ -38,6 +40,52 @@ const WH = -0.34
 
 const PATH = P.cream
 const PATH_DOT = P.gold
+
+/** world-fixed props: only faces the top-down camera can see, merged into rectangles */
+const FIXED: EmitOpts = { skip: TOP_DOWN, merge: true }
+
+/** the reward chest, just east of the last stop (world xz of its centre) */
+export const CHEST = new THREE.Vector2(6.2, -42.1)
+const CV = 0.1
+/** blinkers and glints come alive for this long after each beat change, then rest lit / off */
+const BLINK_T = 4
+const GLINT_T = 5
+
+/** 5 x 7 capitals for the gate's nameplate (hand-set, so no font has to load) */
+const GLYPHS: Record<string, string[]> = {
+  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+  I: ['###', '.#.', '.#.', '.#.', '.#.', '.#.', '###'],
+  D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  Q: ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'],
+  U: ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  ' ': ['..', '..', '..', '..', '..', '..', '..'],
+}
+
+/** a wooden nameplate: void edge, orange frame, brown board, cream capitals with a void drop shadow */
+function plateRows(text: string) {
+  const glyphs = [...text].map(ch => GLYPHS[ch] ?? GLYPHS[' '])
+  const tw = glyphs.reduce((w, g) => w + g[0].length, 0) + glyphs.length - 1
+  const W = tw + 8
+  const H = 13
+  const g: string[][] = []
+  for (let y = 0; y < H; y++)
+    g.push([...Array(W)].map((_, x) => (x === 0 || y === 0 || x === W - 1 || y === H - 1 ? 'k' : x === 1 || y === 1 || x === W - 2 || y === H - 2 ? 'o' : 'b')))
+  let cx = 4
+  for (const gl of glyphs) {
+    for (let y = 0; y < 7; y++)
+      for (let x = 0; x < gl[y].length; x++) {
+        if (gl[y][x] !== '#') continue
+        g[3 + y][cx + x] = 'c'
+        if (g[4 + y][cx + x] === 'b') g[4 + y][cx + x] = 'k'
+      }
+    cx += gl[0].length + 1
+  }
+  // corner pixels off, for a rounded board
+  g[0][0] = g[0][W - 1] = g[H - 1][0] = g[H - 1][W - 1] = '.'
+  return g.map(r => r.join(''))
+}
 
 interface HouseOpts {
   /** west edge and front (south) edge, in world units */
@@ -68,6 +116,12 @@ export class Village {
   private flies: { a: THREE.Mesh; b: THREE.Mesh; home: THREE.Vector3; seed: number }[] = []
   private glints: { m: THREE.Mesh; seed: number }[] = []
   private blink: THREE.Mesh[] = []
+  /** beat the story was on last frame, and when it changed (finite ambient blinks) */
+  private beat = -99
+  private beatAt = 0
+  private lid!: THREE.Group
+  private prize!: THREE.Mesh
+  private sparks: THREE.Mesh[] = []
   private hens: { m: THREE.Mesh; home: THREE.Vector3; seed: number; span: number }[] = []
   private shade = new Buf()
   private type = new Uint8Array(COLS * ROWS)
@@ -354,7 +408,7 @@ export class Village {
       }
     }
     const m = place(o.x0, 0, o.zf - o.d)
-    walls.emit(b, V, { m })
+    walls.emit(b, V, { ...FIXED, m })
 
     const roof = new Vox()
     let top = H
@@ -380,7 +434,7 @@ export class Village {
       roof.box(o.chimney, top + 1, cz, o.chimney + 1, top + 1, cz + 1, P.steel)
       this.chimneys.push(new THREE.Vector3(o.x0 + (o.chimney + 1) * V, (top + 2) * V, o.zf - o.d + (cz + 1) * V))
     }
-    roof.emit(b, V, { m, ramp: 'roof' })
+    roof.emit(b, V, { ...FIXED, m, ramp: 'roof' })
     this.reserve(o.x0 - 0.3, o.zf - o.d - 0.3, o.x0 + o.w + 0.3, o.zf + 0.4)
   }
 
@@ -482,13 +536,13 @@ export class Village {
         const pick = r()
         const quarter = Math.floor(r() * 4)
         if (d === 2 && pick < 0.45) {
-          bushes[Math.floor(r() * 2)].emit(b, 0.2, { m: place(x + jx, GH, z + jz, quarter), ramp: 'soft' })
+          bushes[Math.floor(r() * 2)].emit(b, 0.2, { ...FIXED, m: place(x + jx, GH, z + jz, quarter), ramp: 'soft' })
           this.blob(x + jx + 0.12, z + jz + 0.1, 0.55)
         } else if (pick < (edge ? 0.45 : 0.22)) {
-          pine.emit(b, 0.25, { m: place(x + jx, GH, z + jz, quarter), ramp: 'soft' })
+          pine.emit(b, 0.25, { ...FIXED, m: place(x + jx, GH, z + jz, quarter), ramp: 'soft' })
           this.blob(x + jx + 0.2, z + jz + 0.15, 0.85)
         } else {
-          round[Math.floor(r() * round.length)].emit(b, 0.25, { m: place(x + jx, GH, z + jz, quarter), ramp: 'soft' })
+          round[Math.floor(r() * round.length)].emit(b, 0.25, { ...FIXED, m: place(x + jx, GH, z + jz, quarter), ramp: 'soft' })
           this.blob(x + jx + 0.25, z + jz + 0.15, 1.0)
         }
       }
@@ -544,7 +598,7 @@ export class Village {
     v.box(12, 2, 13, 15, 2, 14, P.brown)
     v.box(1, 1, 13, 3, 2, 14, brick)
     v.set(2, 3, 13, brick)
-    v.emit(b, V, { m: place(-1.5, 0, -4.5) })
+    v.emit(b, V, { ...FIXED, m: place(-1.5, 0, -4.5) })
     this.reserve(-1.8, -4.8, 2.8, -1.0)
   }
 
@@ -574,7 +628,7 @@ export class Village {
       for (let x = -1; x <= 24; x++) v.set(x, y, z, Math.floor((x + 1) / 3) % 2 ? P.cream : P.coral)
     }
     for (let x = -1; x <= 24; x += 2) v.set(x, 15, 10, Math.floor((x + 1) / 3) % 2 ? P.cream : P.coral)
-    v.emit(b, V, { m: place(-6.5, 0, -8.35) })
+    v.emit(b, V, { ...FIXED, m: place(-6.5, 0, -8.35) })
     this.reserve(-6.7, -8.4, -3.3, -6.9)
   }
 
@@ -604,7 +658,7 @@ export class Village {
       }
     // plyo box
     v.box(12, 0, 0, 16, 4, 3, P.orange)
-    v.emit(b, V, { m: place(-1.3, 0, -16.6) })
+    v.emit(b, V, { ...FIXED, m: place(-1.3, 0, -16.6) })
     this.reserve(-1.4, -16.8, 3.8, -14.4)
   }
 
@@ -628,7 +682,7 @@ export class Village {
           v.set(x, 2, 2, P.purple)
         }
       }
-      v.emit(b, V, { m: place(4.9, GH * 0 + 0, zr) })
+      v.emit(b, V, { ...FIXED, m: place(4.9, GH * 0 + 0, zr) })
     }
     // barrels
     const barrel = new Vox()
@@ -640,9 +694,9 @@ export class Village {
         barrel.set(x, 5, z, P.steel)
       }
     barrel.box(-1, 7, -1, 0, 7, 0, P.purple)
-    barrel.emit(b, V, { m: place(8.3, GH, -19.95) })
-    barrel.emit(b, V, { m: place(9.1, GH, -19.9) })
-    barrel.emit(b, V, { m: place(8.7, GH + 0.875, -19.95) })
+    barrel.emit(b, V, { ...FIXED, m: place(8.3, GH, -19.95) })
+    barrel.emit(b, V, { ...FIXED, m: place(9.1, GH, -19.9) })
+    barrel.emit(b, V, { ...FIXED, m: place(8.7, GH + 0.875, -19.95) })
     this.reserve(4.6, -26.2, 11.4, -20.3)
     this.reserve(7.7, -20.4, 9.7, -19.6)
   }
@@ -664,7 +718,7 @@ export class Village {
     v.set(4, 8, 2, P.magenta)
     v.box(7, 6, 1, 8, 8, 2, P.gold)
     v.box(7, 9, 1, 7, 10, 1, P.gold)
-    v.emit(b, V, { m: place(0.35, 0, -26.45) })
+    v.emit(b, V, { ...FIXED, m: place(0.35, 0, -26.45) })
     this.reserve(0.2, -26.6, 1.7, -25.8)
     for (const [x, y, z] of [
       [0.55, 1.3, -26.2],
@@ -688,7 +742,7 @@ export class Village {
     v.set(1, 4, 1, P.gold)
     for (let i = 0; i < 3; i++) v.box(-1 + i, 6 + i, -1 + i, 4 - i, 6 + i, 4 - i, P.coral)
     v.set(1, 9, 1, P.gold)
-    v.emit(b, V, { m: place(-7.0, 3.0, -35.1) })
+    v.emit(b, V, { ...FIXED, m: place(-7.0, 3.0, -35.1) })
     this.reserve(-10.8, -36.9, -2.2, -32.1)
   }
 
@@ -704,14 +758,14 @@ export class Village {
       v.set(4, y, z, P.orange)
       if (y % 3 === 1) v.box(1, y, z, 3, y, z, P.brown)
     }
-    v.emit(b, V, { m: place(2.15, 0, -38.6) })
+    v.emit(b, V, { ...FIXED, m: place(2.15, 0, -38.6) })
     const t = new Vox()
     t.box(0, 0, 0, 5, 2, 2, P.coral)
     t.box(0, 3, 1, 5, 3, 1, P.magenta)
     t.box(2, 4, 1, 3, 4, 1, P.steel)
     t.box(8, 0, 0, 10, 3, 2, P.white)
     t.box(8, 3, 0, 10, 3, 2, P.blue)
-    t.emit(b, V, { m: place(-1.25, 0, -38.35) })
+    t.emit(b, V, { ...FIXED, m: place(-1.25, 0, -38.35) })
     this.reserve(-1.8, -41.9, 3.8, -38.0)
   }
 
@@ -724,12 +778,12 @@ export class Village {
     k.box(0, 0, 0, 3, 7, 2, P.slate)
     k.box(0, 8, 0, 3, 10, 3, P.steel)
     k.box(1, 8, 4, 2, 9, 4, P.signal)
-    k.emit(b, V, { m: place(6.75, 0, -44.25) })
+    k.emit(b, V, { ...FIXED, m: place(6.75, 0, -44.25) })
     // antenna
     const a = new Vox()
     a.box(0, 0, 0, 0, 7, 0, P.steel)
     a.box(-2, 7, 0, 2, 7, 0, P.steel)
-    a.emit(b, V, { m: place(3.4, 9 * 0.25 + 0.25, -46.4) })
+    a.emit(b, V, { ...FIXED, m: place(3.4, 9 * 0.25 + 0.25, -46.4) })
     this.blinker(3.46, 9 * 0.25 + 0.25 + 1.02, -46.34, P.coral)
     this.blinker(6.94, 1.18, -43.7, P.signal, 0.9)
     this.reserve(2.2, -47.9, 7.8, -43.9)
@@ -749,7 +803,7 @@ export class Village {
       }
     v.box(-2, 1, -2, 1, 6, 1, P.steel)
     v.box(-3, 7, -3, 2, 7, 2, P.white)
-    v.emit(b, V, { m: place(cx, 0, cz) })
+    v.emit(b, V, { ...FIXED, m: place(cx, 0, cz) })
     // water disc inside the basin
     const r = 9 * V
     for (let x = -9; x < 9; x++)
@@ -770,12 +824,16 @@ export class Village {
           mark.set(i, j, 1, P.gold)
         }
       }
-    mark.emit(b, 0.075, { m: place(cx - (N * 0.075) / 2, 8 * V + 0.05, cz - 0.05) })
+    mark.emit(b, 0.075, { ...FIXED, m: place(cx - (N * 0.075) / 2, 8 * V + 0.05, cz - 0.05) })
     this.fountainTop.set(cx, 1.1, cz)
     this.reserve(cx - 1.5, cz - 1.5, cx + 1.5, cz + 1.5)
   }
 
-  /** the village gate the player enters through: two stone posts topped with lanterns */
+  /**
+   * The village gate the player enters through: two stone posts topped with
+   * lanterns, a timber beam across them, and a nameplate hung under it that
+   * turns to face the (fixed) camera like a sprite would, so it stays legible.
+   */
   private gate(b: Buf) {
     const V = 0.125
     const v = new Vox()
@@ -788,12 +846,103 @@ export class Village {
       v.box(x + 1, 13, 1, x + 2, 14, 2, P.gold)
       v.box(x, 15, 0, x + 3, 15, 3, P.night)
       v.box(x + 1, 16, 1, x + 2, 16, 2, P.night)
+      // timber upright from the lantern cap to the beam
+      v.box(x + 1, 17, 1, x + 2, 22, 2, P.brown)
     }
-    v.emit(b, V, { m: place(-2.2, 0, 4.2) })
+    v.box(-1, 22, 1, 34, 23, 2, P.brown)
+    v.box(-1, 23, 1, 34, 23, 2, P.orange)
+    v.emit(b, V, { ...FIXED, m: place(-2.2, 0, 4.2) })
+    const plate = sprite(plateRows('SIDE QUESTS'), { k: P.void, o: P.orange, b: P.brown, c: P.cream }, { pixelSize: 0.05 })
+    plate.rotation.x = -EL
+    plate.position.set(-2.2 + 16.5 * V, 2.45, 4.2 + 2.6 * V)
+    this.group.add(plate)
     this.blob(-1.85, 4.55, 0.35)
     this.blob(1.95, 4.55, 0.35)
     this.reserve(-2.4, 4.0, -1.6, 4.8)
     this.reserve(1.4, 4.0, 2.4, 4.8)
+  }
+
+  /**
+   * The reward chest: wooden body with gold bands and a lock, a heap of gold
+   * inside, and a hinged lid (its own mesh, so it can swing open). A heart
+   * container and a few sparkles wait inside for the end of the level.
+   */
+  private chest(b: Buf) {
+    const body = new Vox()
+    body.box(0, 0, 0, 8, 4, 5, P.brown)
+    for (const x of [1, 7]) body.paint(x, 0, 0, x, 4, 5, P.gold)
+    // gold heaped inside (only seen once the lid is up)
+    body.paint(1, 4, 1, 7, 4, 4, P.gold)
+    body.paint(2, 4, 2, 6, 4, 3, P.orange)
+    body.set(3, 4, 2, P.cream)
+    body.set(5, 4, 3, P.cream)
+    // lock plate
+    body.box(3, 2, 6, 5, 4, 6, P.gold)
+    body.set(4, 3, 6, P.void)
+    const x0 = CHEST.x - 4.5 * CV
+    const z0 = CHEST.y - 3 * CV
+    body.emit(b, CV, { ...FIXED, m: place(x0, 0, z0) })
+    this.blob(CHEST.x + 0.08, CHEST.y + 0.12, 0.55)
+
+    // lid: a stepped arch, hinged along the back top edge
+    const lid = new Vox()
+    lid.box(0, 0, 0, 8, 0, 5, P.brown)
+    lid.box(0, 1, 1, 8, 1, 4, P.brown)
+    lid.box(0, 2, 2, 8, 2, 3, P.brown)
+    for (const x of [1, 7]) lid.paint(x, 0, 0, x, 2, 5, P.gold)
+    lid.box(3, 0, 6, 5, 0, 6, P.gold)
+    // no face culling here: the lid swings round to show its inside
+    const lm = new THREE.Mesh(lid.geometry(CV, { merge: true }), voxMaterial())
+    this.lid = new THREE.Group()
+    this.lid.add(lm)
+    this.lid.position.set(x0, 5 * CV, z0)
+    this.group.add(this.lid)
+
+    // the heart container + sparkles (billboards, off until the chest opens)
+    this.prize = sprite(
+      ['.kk...kk.', 'kcck.kcck', 'kwcckccck', 'kwcccccck', '.kccccck.', '..kccck..', '...kck...', '....k....'],
+      { k: P.void, c: P.coral, w: P.white },
+      { pixelSize: 0.075 },
+    )
+    for (let i = 0; i < 3; i++)
+      this.sparks.push(sprite(['..w..', '..w..', 'wwgww', '..w..', '..w..'], { w: P.white, g: P.gold }, { pixelSize: 0.05, glow: 1.3 }))
+    for (const m of [this.prize, ...this.sparks]) {
+      const mat = m.material as THREE.MeshBasicMaterial
+      mat.depthTest = false
+      m.renderOrder = 20
+      m.visible = false
+      this.group.add(m)
+    }
+    this.reserve(CHEST.x - 0.5, CHEST.y - 0.35, CHEST.x + 0.5, CHEST.y + 0.35)
+  }
+
+  /**
+   * Chest state, a pure function of story progress: `open` 0..1 swings the lid
+   * (three stepped frames), `rise` 0..1 lifts the heart out of it; sparkles pop
+   * once while the heart rises. Reduced motion: no swing, no sparkles, the
+   * chest simply stands open with the heart above it.
+   */
+  setChest(open: number, rise: number, calm: boolean, camera: THREE.Camera) {
+    const o = calm ? (open > 0 ? 1 : 0) : Math.floor(open * 3 + 1e-6) / 3
+    this.lid.rotation.x = -1.95 * o
+    const r = calm ? (rise > 0 ? 1 : 0) : Math.floor(rise * 6 + 1e-6) / 6
+    this.prize.visible = r > 0
+    if (r > 0) {
+      this.prize.position.set(CHEST.x, 0.6 + 1.5 * r, CHEST.y + 0.1)
+      this.prize.scale.setScalar(r < 0.34 ? 0.6 : 1)
+      this.prize.quaternion.copy(camera.quaternion)
+    }
+    for (let i = 0; i < this.sparks.length; i++) {
+      const m = this.sparks[i]
+      const p = (rise - i * 0.18) / 0.5
+      const on = !calm && p > 0 && p < 1
+      m.visible = on
+      if (!on) continue
+      const a = i * 2.1 + 0.6
+      m.position.set(CHEST.x + Math.cos(a) * 0.55, 0.8 + 1.3 * r + Math.sin(a) * 0.35, CHEST.y + 0.15)
+      m.scale.setScalar(p < 0.33 ? 0.6 : p < 0.66 ? 1 : 0.6)
+      m.quaternion.copy(camera.quaternion)
+    }
   }
 
   private fence(b: Buf, xa: number, za: number, xb: number, zb: number) {
@@ -805,7 +954,7 @@ export class Village {
     v.box(0, 2, 0, len, 2, 0, P.cream)
     v.box(0, 4, 0, len, 4, 0, P.cream)
     const m = alongX ? place(Math.min(xa, xb), GH, za) : place(xa, GH, Math.max(za, zb), 1)
-    v.emit(b, V, { m })
+    v.emit(b, V, { ...FIXED, m })
   }
 
   private lamp(b: Buf, x: number, z: number) {
@@ -815,7 +964,7 @@ export class Village {
     v.box(0, 2, 0, 0, 11, 0, P.night)
     v.box(-1, 12, -1, 1, 13, 1, P.gold)
     v.box(-1, 14, -1, 1, 14, 1, P.night)
-    v.emit(b, V, { m: place(x, GH, z) })
+    v.emit(b, V, { ...FIXED, m: place(x, GH, z) })
     this.reserve(x - 0.3, z - 0.3, x + 0.3, z + 0.3)
   }
 
@@ -825,7 +974,7 @@ export class Village {
     v.box(0, 0, 0, 0, 6, 0, P.brown)
     v.box(-3, 5, 1, 3, 8, 1, P.orange)
     v.box(-2, 6, 2, 2, 7, 2, P.brown)
-    v.emit(b, V, { m: place(x, GH, z) })
+    v.emit(b, V, { ...FIXED, m: place(x, GH, z) })
     this.reserve(x - 0.4, z - 0.3, x + 0.4, z + 0.3)
   }
 
@@ -861,7 +1010,7 @@ export class Village {
       for (let z = 0; z < D; z += 4) v.box(x, 0, z, x, 4, z, P.brown)
       v.box(x, 4, 0, x, 4, D - 1, P.orange)
     }
-    v.emit(b, V, { m: place(xa - 0.5, 0.02, za - 0.5 - 0.25), ramp: 'flat' })
+    v.emit(b, V, { ...FIXED, m: place(xa - 0.5, 0.02, za - 0.5 - 0.25), ramp: 'flat' })
   }
 
   /* ------------------------------------------------------------ animated */
@@ -954,6 +1103,7 @@ export class Village {
     this.school(props)
     this.heroHouse(props)
     this.office(props)
+    this.chest(props)
     const water = new Buf()
     this.fountain(props, water)
     this.bridge(props)
@@ -1000,7 +1150,7 @@ export class Village {
     const ground = new Buf()
     this.ground(ground, detail, water)
     this.flowers(detail)
-    detail.emit(ground, 0.1, { ramp: 'flat', origin: [0.05, -GH, 0.05] })
+    detail.emit(ground, 0.1, { skip: TOP_DOWN, ramp: 'flat', origin: [0.05, -GH, 0.05] })
     await nextFrame()
     this.scatterTrees(props)
     await nextFrame()
@@ -1035,8 +1185,14 @@ export class Village {
 
   /* -------------------------------------------------------------- update */
 
-  update(time: number, calm: boolean, camera: THREE.Camera) {
+  /** `beat`: the story beat on screen (ambient blinks wake for a few seconds when it changes) */
+  update(time: number, calm: boolean, camera: THREE.Camera, beat: number) {
     const t = calm ? 0 : time
+    if (beat !== this.beat) {
+      this.beat = beat
+      this.beatAt = time
+    }
+    const since = time - this.beatAt
     this.waterMat.uniforms.uTime.value = calm ? 0 : time
 
     // smoke puffs rise in 8 steps, grow, then pop
@@ -1086,10 +1242,10 @@ export class Village {
       fl.b.visible = !flap && !calm
     }
 
-    // glass glints: pop on 3 frames at a time
+    // glass glints: pop on 3 frames at a time, for a few seconds after each beat change
     for (const g of this.glints) {
       const ph = (t * 0.6 + g.seed) % 1.6
-      const on = !calm && ph < 0.3
+      const on = !calm && since < GLINT_T && ph < 0.3
       g.m.visible = on
       if (on) {
         const s = ph < 0.1 ? 0.6 : ph < 0.2 ? 1 : 0.6
@@ -1109,7 +1265,9 @@ export class Village {
       h.m.rotation.y = leg === 0 ? 0 : Math.PI
       h.m.rotation.z = !calm && !moving && Math.floor(t * 4 + h.seed) % 3 === 0 ? -0.45 : 0
     }
-    for (let i = 0; i < this.blink.length; i++) this.blink[i].visible = calm || Math.floor(t * 2 + i * 0.5) % 2 === 0
+    // antenna + terminal lights: blink at 1 Hz for a few seconds after each beat change, then rest lit
+    const awake = !calm && since < BLINK_T
+    for (let i = 0; i < this.blink.length; i++) this.blink[i].visible = !awake || Math.floor(since * 2 + i * 0.5) % 2 === 0
   }
 }
 

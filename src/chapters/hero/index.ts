@@ -3,11 +3,11 @@ import type { Chapter, ChapterContext, Frame } from '../../core/types'
 import { clamp, smoothstep } from '../../core/math'
 import { nextFrame } from '../../core/yield'
 import { P } from '../../kit/pixel'
-import { Backdrop, CELL } from './scene'
+import { Backdrop, type BackdropState, CELL } from './scene'
 import { Mark } from './mark'
 import { Pickups, twinkle } from './pickups'
-import { HeroUI } from './ui'
-import { HeroPose, PAYOFF, computePose, flyWeight } from './layout'
+import { HeroUI, type HeroUIState, dialogOn } from './ui'
+import { BEAT, HeroPose, PAYOFF, computePose, flyWeight } from './layout'
 import { bounceDrop, stepped } from './util'
 import './hero.css'
 
@@ -18,12 +18,13 @@ import './hero.css'
  * striped sun, neon ridges, a lit pixel city and a scrolling perspective grid.
  * The Hark mark is the GAME LOGO: when the loader hands over it drops in
  * from the top and bounces, the grid lights up row by row and a coin pops
- * out of it. PRESS START (scroll, click or Enter) and the mark hops, spins
- * and becomes the player: the camera races over the grid toward the city
- * while the mark leads on a coin trail, collecting coins, and a PLAYER 1
- * dialogue window types the manifesto. The camera settles with the mark
- * eclipsing the sun, the headline and a game menu come up, then READY? —
- * the mark rockets into the sun and the iris closes on it.
+ * out of it; the Hark.Digital wordmark and the tagline (the game's subtitle)
+ * sit under it. PRESS START (scroll, click or Enter) and the mark hops,
+ * spins and takes off: the camera races over the grid toward the city while
+ * the mark leads on a coin trail, collecting coins, and narrates the
+ * manifesto in a dialogue window (speaker HARK). The camera settles with
+ * the mark eclipsing the sun, the headline and a game menu come up, then
+ * READY? — the mark rockets into the sun and the iris closes on it.
  */
 
 /** seconds of the reveal intro */
@@ -63,6 +64,9 @@ export default function create(): Chapter {
   let curLocal = 0
   const ray = new THREE.Raycaster()
   const introCoin = { p: new THREE.Vector3(), life: 0, scale: 1 }
+  // per-frame state objects, reused (no allocations in the frame loop)
+  const bs: BackdropState = { reach: 0, front: 0, scroll: 0, gamePx: 4, stars: 1, sunScale: 1, sunPos: pose.sun, cam: pose.pos, calm: 0 }
+  const us: HeroUIState = { local: 0, intro: 0, dialogT: 0, time: 0 }
 
   const shake = (amp: number) => {
     if (reduced) return
@@ -70,7 +74,8 @@ export default function create(): Chapter {
     shakeAmp = amp
   }
   const flash = (amp: number) => {
-    if (reduced) return
+    // rate-limited: scrubbing back and forth over PRESS START never strobes
+    if (reduced || now - flashAt < 1.2) return
     flashAt = now
     flashAmp = amp
   }
@@ -95,7 +100,7 @@ export default function create(): Chapter {
     async init(ctx: ChapterContext) {
       reduced = ctx.reducedMotion
       mobile = ctx.mobile
-      back = new Backdrop()
+      back = new Backdrop(reduced)
       group.add(back.group)
       await back.build(ctx.mobile, nextFrame)
       mark = new Mark()
@@ -106,6 +111,7 @@ export default function create(): Chapter {
       group.add(picks.group)
       ui = new HeroUI(ctx.stage)
       ui.onStart = pressStart
+      ui.reduced = reduced
 
       const onReveal = () => {
         revealed = true
@@ -157,7 +163,7 @@ export default function create(): Chapter {
           shake(0.5)
           flash(0.28)
         }
-        if (lastLocal < 0.69 && local >= 0.69) shake(0.35)
+        if (lastLocal < BEAT.setB && local >= BEAT.setB) shake(0.35)
       }
       if (active && introT >= 0 && !introDone && introT - frame.dt < DROP_AT + 0.36 && introT >= DROP_AT + 0.36) shake(0.45)
       if (active) lastLocal = local
@@ -182,13 +188,13 @@ export default function create(): Chapter {
       const sq = Math.max(pose.squash * 0.9, drop.squash * titleW, pk >= 0 && pk < 0.08 ? 0.5 : 0) * motion
       mark.body.scale.set(1 + 0.12 * sq, 1 - 0.16 * sq, 1)
       mark.body.position.y = -0.08 * sq
-      // the gem spins on sprite frames and glints
-      mark.gem.rotation.y = Math.floor(frame.time * 6 * motion) * (Math.PI / 4)
-      mark.gemMat.color.setScalar(1 + 0.18 * (Math.sin(stepped(frame.time, 6) * 2.4) > 0.6 ? 1 : 0) * motion)
+      // the gem spins on sprite frames and glints (held still + steady under reduced motion)
+      mark.gem.rotation.y = reduced ? 0 : Math.floor(frame.time * 6) * (Math.PI / 4)
+      mark.gemMat.color.setScalar(reduced ? 1 : 1 + 0.18 * (Math.sin(stepped(frame.time, 6) * 2.4) > 0.6 ? 1 : 0))
       // title shine sweep
       const settled = introDone || it > 1.3
       const sh = (frame.time % 3.6) / 0.7
-      const still = local < 0.1 || (local > 0.7 && local < 0.93)
+      const still = local < BEAT.press || (local > BEAT.setB + 0.01 && local < BEAT.ready)
       mark.shine.value = settled && still && sh < 1 && !reduced ? -0.95 + sh * 1.9 : -9
       mark.root.updateMatrixWorld(true)
 
@@ -217,9 +223,9 @@ export default function create(): Chapter {
           sp.add(_w, twinkle(bT * 0.9) * pose.markScale * 0.5, a % 2 ? P.gold : P.cyan, pose.quat)
         }
       }
-      // the gem glints every few seconds; a landing glint on the intro
+      // the gem glints every few seconds (not under reduced motion); a landing glint on the intro
       if (mark.root.visible && wFly < 0.5) {
-        const g = (frame.time % 2.8) - 1.2
+        const g = reduced ? -1 : (frame.time % 2.8) - 1.2
         const land = it - (DROP_AT + 0.4)
         const k = Math.max(twinkle(g), land >= 0 && land < 0.6 ? twinkle(land) * 1.3 : 0)
         if (k > 0) {
@@ -249,17 +255,15 @@ export default function create(): Chapter {
       const speed = (1 - wFly) * 2.2 * (reduced ? 0.25 : 1)
       gridScroll = (gridScroll + frame.dt * speed) % CELL
       const pixel = mobile ? 3 : 4
-      back.update(frame.time, {
-        reach,
-        front: !introDone && revealed && it < 0.9 ? 1 : 0,
-        scroll: gridScroll,
-        // the scene renders at the post pipeline's grid scale, not the canvas DPR
-        gamePx: pixel * ctx.post.scale,
-        stars: 1,
-        sunScale: 1 - 0.36 * smoothstep(0.55, 0.68, local),
-        sunPos: pose.sun,
-        cam: pose.pos,
-      })
+      bs.reach = reach
+      bs.front = !introDone && revealed && it < 0.9 ? 1 : 0
+      bs.scroll = gridScroll
+      // the scene renders at the post pipeline's grid scale, not the canvas DPR
+      bs.gamePx = pixel * ctx.post.scale
+      bs.sunScale = 1 - 0.36 * smoothstep(BEAT.setA, BEAT.setB - 0.01, local)
+      // reduced motion: windows steady on, beacons + star twinkles still
+      bs.calm = reduced ? 1 : 0
+      back.update(frame.time, bs)
 
       // ---- world light for the toon logo (from the upper left, toward the camera)
       const wp = ctx.world.params
@@ -290,9 +294,12 @@ export default function create(): Chapter {
       }
 
       // ---- DOM
-      const dOn = local > 0.215 && local < 0.555
-      dialogT = dOn ? dialogT + frame.dt : 0
-      ui.update({ local, intro: introP, dialogT, time: frame.time })
+      dialogT = dialogOn(local) ? dialogT + frame.dt : 0
+      us.local = local
+      us.intro = introP
+      us.dialogT = dialogT
+      us.time = frame.time
+      ui.update(us)
     },
 
     camera(local: number, frame: Frame, out) {

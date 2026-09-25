@@ -14,13 +14,15 @@ import { clamp, lerp, smoothstep } from '../../core/math'
  *   0.265      1 CLEAR!
  *   0.30–0.37  walk → 2 PROTOTYPE         (card 1-02)
  *   0.425      2 CLEAR!
- *   0.46–0.535 walk → 3 BUILD (up the stairs to the castle; the crane sets
- *              the last block on the tower 0.535–0.585)
- *   0.585      3 CLEAR!
+ *   0.46–0.535 walk → 3 BUILD (up the stairs to the castle; the tower's
+ *              missing course stacks in block by block 0.54–0.578, a coin
+ *              pops out)
+ *   0.585      3 CLEAR! (merlons + flag pop up on the tower)
  *   0.62–0.70  walk → 4 SUPPORT           (card 1-04)
  *   0.745      4 CLEAR!
  *   0.80–0.945 RESULTS screen (stats tally), map pulled back, fireworks
- *   0.945–1.00 "WORLD CLEAR!" — camera closes on the player, the iris shuts
+ *   0.945–1.00 WORLD CLEAR! banner — camera closes on the player, the iris
+ *              shuts on the face
  */
 
 export const HEAD: [number, number] = [0.065, 0.79]
@@ -35,8 +37,10 @@ export const CLEAR = [0.265, 0.425, 0.585, 0.745]
 export const CARD = [0.135, 0.3, 0.46, 0.62]
 export const CARD_OUT = 0.79
 export const RESULTS: [number, number] = [0.8, 0.945]
-/** crane lowers the last block onto the castle tower */
-export const CRANE: [number, number] = [0.54, 0.585]
+/** the tower's last course drops in, block by block (first starts → last lands) */
+export const STACK: [number, number] = [0.54, 0.578]
+/** the WORLD CLEAR! banner */
+export const WON = 0.945
 /** keyboard stops: the player standing on each node, its card up */
 export const ANCHORS = [0.225, 0.395, 0.56, 0.72]
 
@@ -175,20 +179,33 @@ export function pathAt(s: number, out: { x: number; z: number; dx: number; dz: n
   return out
 }
 
+export interface PlayerAt {
+  s: number
+  walking: boolean
+  seg: number
+}
+
+const setAt = (o: PlayerAt, s: number, walking: boolean, seg: number) => {
+  o.s = s
+  o.walking = walking
+  o.seg = seg
+  return o
+}
+
 /** Where the player is along the path at l (distance), and whether walking. */
-export function playerS(l: number) {
-  if (l < WALK[0][0]) return { s: NODE_S[0], walking: false, seg: -1 }
+export function playerS(l: number, out: PlayerAt = { s: 0, walking: false, seg: -1 }) {
+  if (l < WALK[0][0]) return setAt(out, NODE_S[0], false, -1)
   for (let i = 0; i < WALK.length; i++) {
     const [a, b] = WALK[i]
-    if (l < a) return { s: NODE_S[i], walking: false, seg: -1 }
+    if (l < a) return setAt(out, NODE_S[i], false, -1)
     if (l < b) {
       const k = clamp((l - a) / (b - a))
       // ease in/out: start walking, stride, stop on the node
       const e = k * k * (3 - 2 * k)
-      return { s: lerp(NODE_S[i], NODE_S[i + 1], e), walking: k > 0.001 && k < 0.999, seg: i }
+      return setAt(out, lerp(NODE_S[i], NODE_S[i + 1], e), k > 0.001 && k < 0.999, i)
     }
   }
-  return { s: NODE_S[4], walking: false, seg: -1 }
+  return setAt(out, NODE_S[4], false, -1)
 }
 
 /* ------------------------------------------------------------------ camera shots */

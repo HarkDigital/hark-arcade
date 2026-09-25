@@ -1,7 +1,8 @@
 /* ------------------------------------------------------------------
-   Town Chatter (voices) — location banner, RPG dialogue window with a
+   Side Quests (voices) — location banner, RPG dialogue window with a
    name plate, portrait, typewriter line and a quest tracker; the outro
-   toast. Every selector is scoped under .stage-voices.
+   toast. Every selector is scoped under .stage-voices. The keyboard focus
+   pill lives at the top (base.css), so every window here stays low.
    ------------------------------------------------------------------ */
 
 /* measures the safe area for the JS camera framing (never visible) */
@@ -215,7 +216,7 @@
   visibility: hidden;
 }
 
-/* ▼ next: blinks once the line has finished typing */
+/* ▼ next: blinks five times once the line has finished typing, then rests lit */
 .stage-voices .vo-dlg-next {
   position: absolute;
   right: 14px;
@@ -228,7 +229,7 @@
 }
 .stage-voices .vo-dlg.is-done .vo-dlg-next {
   opacity: 1;
-  animation: vo-next 1s steps(1, end) infinite;
+  animation: vo-next 1s steps(1, end) 5;
 }
 @keyframes vo-next {
   0% {
@@ -322,6 +323,69 @@
   }
   .stage-voices .vo-outro-hearts {
     display: none;
+  }
+}
+
+/* ---------------- short landscape (a phone turned sideways) ----------------
+   The chrome bands shrink (base.css, same query); the dialogue compacts so the
+   pair it frames keeps a strip of village between it and the focus pill. */
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .stage-voices .vo-dlg {
+    padding-top: 20px;
+    max-width: 860px;
+  }
+  .stage-voices .vo-dlg-win {
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    padding: 18px 16px 12px;
+  }
+  .stage-voices .vo-dlg-face {
+    position: static;
+    width: 48px;
+    height: 48px;
+    border-width: 3px;
+    outline-width: 3px;
+    box-shadow: 3px 3px 0 var(--void);
+  }
+  .stage-voices .vo-dlg-tab,
+  .stage-voices .vo-dlg-track {
+    padding: 4px 10px 5px;
+    border-width: 3px;
+    outline-width: 3px;
+  }
+  .stage-voices .vo-dlg-tab {
+    left: 12px;
+    max-width: calc(100% - 24px);
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .stage-voices .vo-dlg-who {
+    font-size: 17px;
+  }
+  .stage-voices .vo-dlg-co,
+  .stage-voices .vo-dlg-count {
+    font-size: 10px;
+  }
+  .stage-voices .vo-q {
+    font-size: 20px;
+    line-height: 1.08;
+  }
+  .stage-voices .vo-dlg-next {
+    font-size: 16px;
+    right: 10px;
+    bottom: 2px;
+  }
+  .stage-voices .vo-head {
+    gap: 6px;
+    padding: 10px 18px 12px;
+  }
+  .stage-voices .vo-title {
+    font-size: 1.75rem;
+  }
+  .stage-voices .vo-outro {
+    padding: 8px 14px;
   }
 }
 

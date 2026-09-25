@@ -1,13 +1,13 @@
 import * as THREE from 'three'
 import type { CameraPose, Chapter } from '../../core/types'
 import { Callout } from '../../core/dom'
-import { ease, lerp, segment, window01 } from '../../core/math'
+import { clamp, ease, lerp, segment, smoothstep, window01 } from '../../core/math'
 import { nextFrame } from '../../core/yield'
 import { P } from '../../kit/pixel'
-import { BODY_Y, Boss } from './boss'
-import { SHIELD_R, Shield, Site } from './site'
-import { Backdrop, Floor } from './arena'
-import { Bullets, Coins, Debris, Pixels, Pops, Shots } from './fx'
+import { BODY_Y, Boss, type BossState } from './boss'
+import { SHIELD_R, SITE_TOP, SITE_W, Shield, Site, type SiteState } from './site'
+import { Backdrop, Floor, type FloorState } from './arena'
+import { Bullets, Coins, Debris, Pixels, Pops, Shots, type BulletCtx } from './fx'
 import { Hud } from './hud'
 import { T, bossHP, fract, hash1, siteDamage, siteHP, stepq } from './timeline'
 import './shield.css'
@@ -29,6 +29,11 @@ const BOOM_DUR = 3.2
 const BURST = 0.55
 const SHIELD_Z = 0.45
 const SITE_CY = 0.78
+/** the in-beat moment the WARNING! band is laid out against */
+const WARN_REF = (T.warning[0] + T.warning[1]) / 2
+const FIREWORK_COLS = [P.gold, P.cyan, P.signal, P.coral]
+
+const decay = (v: number, k: number, dt: number) => v * Math.exp(-k * dt)
 
 const SKY = {
   attack: { top: new THREE.Color(P.void), bottom: new THREE.Color(P.purple) },
@@ -77,6 +82,33 @@ export default function create(): Chapter {
   const _bottom = new THREE.Color()
   const _band = new THREE.Color()
   const shieldCircle = { x: 0, y: 0, r: SHIELD_R }
+  const refPose: CameraPose = { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: FOV, roll: 0, parallax: 0 }
+
+  // per-frame inputs, reused (no object literals in the hot path)
+  const bossSt: BossState = {
+    time: 0,
+    pace: 1,
+    drop: 0,
+    hit: 0,
+    glitch: 0,
+    recoil: 0,
+    look: _siteC,
+    dying: 0,
+    core: 0,
+    visible: true,
+  }
+  const siteSt: SiteState = { time: 0, pace: 1, damage: 0, jolt: 0, jiggle: 0, hop: 0, healthy: 0 }
+  const floorSt: FloorState = { time: 0, pace: 1, srcX: 0, corrupt: 0, siteX: 0, safe: 0, wave: -1, clean: 0 }
+  const bulletSt: BulletCtx = {
+    time: 0,
+    pace: 1,
+    presence: 0,
+    src: _mouth,
+    target: _siteC,
+    shield: null,
+    siteR: 0.9,
+    px: null as unknown as Pixels,
+  }
 
   function place() {
     site.group.position.set(lay.siteX, 0, 0)
@@ -96,22 +128,29 @@ export default function create(): Chapter {
     place()
 
     const pr = hud.probe.getBoundingClientRect()
-    const hp = hud.hp.getBoundingClientRect()
     const col = hud.col.getBoundingClientRect()
+    // the HP row's layout box (its hidden state is nudged up by a transform)
+    const hpBottom = hud.root.getBoundingClientRect().top + hud.hp.offsetTop + hud.hp.offsetHeight
     const gutter = pr.left
     let x0: number, x1: number, y0: number, y1: number
     if (fit.portrait) {
       x0 = gutter * 0.4
       x1 = w - gutter * 0.4
-      y0 = hp.bottom + 14
+      y0 = hpBottom + 14
       y1 = Math.max(y0 + h * 0.18, col.top - 10)
     } else {
       x0 = col.right + Math.max(20, w * 0.03)
       x1 = w - gutter * 0.7
-      y0 = hp.bottom + 18
+      y0 = hpBottom + 18
       y1 = pr.bottom + (h - pr.bottom) * 0.35
     }
     hud.setArena((x0 + x1) / 2, y0, x1 - x0, y1 - y0)
+
+    // callout labels stay between the HP strip and the chrome's bottom band
+    // (portrait: above the dialogue column)
+    const floorY = fit.portrait ? Math.min(pr.bottom, col.top) : pr.bottom
+    shieldTag.minY = weakTag.minY = hpBottom + 8
+    shieldTag.maxY = weakTag.maxY = floorY - 8
 
     // project the arena's key points from a reference pose, then scale + pan
     const d0 = 20
@@ -154,6 +193,56 @@ export default function create(): Chapter {
     fit.sx = (rx0 + rx1) / 2 - (minX + maxX) / 2 / k
     // portrait: sit the arena on the dialogue box (sky and moon fill the top)
     fit.sy = fit.portrait ? ry0 + 0.02 - minY / k : (ry0 + ry1) / 2 - (minY + maxY) / 2 / k
+
+    placeWarning(w, h, pr, hpBottom, x0, x1, y0, y1)
+  }
+
+  /**
+   * Lay the WARNING! band out against the in-beat framing: in landscape it
+   * fills the empty copy column left of the little site (never over the
+   * site, the falling boss or the chrome); in portrait it sits under the
+   * arena. Either way its bottom stays above the chrome's bottom band.
+   */
+  function placeWarning(w: number, h: number, pr: DOMRect, hpBottom: number, x0: number, x1: number, y0: number, y1: number) {
+    // the site's screen box at the reference in-beat pose
+    computePose(WARN_REF, 0, refPose, true)
+    scratch.position.copy(refPose.position)
+    scratch.lookAt(refPose.target)
+    scratch.updateMatrixWorld(true)
+    let sl = Infinity
+    let st = Infinity
+    let sb = -Infinity
+    for (let i = 0; i < 8; i++) {
+      _a.set(lay.siteX + (i & 1 ? 0.5 : -0.5) * SITE_W, i & 2 ? SITE_TOP : 0, i & 4 ? 0.2 : -0.2).project(scratch)
+      const sx = (_a.x * 0.5 + 0.5) * w
+      const sy = (-_a.y * 0.5 + 0.5) * h
+      sl = Math.min(sl, sx)
+      st = Math.min(st, sy)
+      sb = Math.max(sb, sy)
+    }
+    const aw = x1 - x0
+    const lo = hpBottom + 12
+    const hi = (bh: number) => pr.bottom - 10 - bh
+    let bx: number, bw: number
+    const gap = Math.max(18, w * 0.018)
+    const room = sl - gap - pr.left
+    const beside = !fit.portrait && Number.isFinite(sl) && room >= 280
+    if (beside) {
+      bw = Math.min(760, room)
+      bx = sl - gap - bw
+    } else {
+      bw = Math.min(aw, 760)
+      bx = (x0 + x1) / 2 - bw / 2
+    }
+    hud.setWarning(bx, 0, bw)
+    const bh = hud.warning.offsetHeight
+    let by: number
+    if (beside) by = (st + sb) / 2 - bh / 2
+    else if (fit.portrait) by = y1 + 18
+    else by = Number.isFinite(sb) && sb + 12 <= hi(bh) ? sb + 12 : st - 12 - bh
+    by = Math.max(lo, Math.min(hi(bh), by))
+    if (!Number.isFinite(by)) by = y0
+    hud.setWarning(bx, by, bw)
   }
 
   function computePose(local: number, time: number, out: CameraPose, still: boolean) {
@@ -199,7 +288,7 @@ export default function create(): Chapter {
   function punch(time: number, shake: number, flash: number, glitch: number) {
     env.shake = Math.max(env.shake, shake)
     // never more than ~2.5 flashes per second, however fast you scroll
-    if (flash > 0 && time - env.lastFlash > 0.4) {
+    if (flash > 0 && time - env.lastFlash >= 0.4) {
       env.flash = Math.max(env.flash, flash)
       env.lastFlash = time
     }
@@ -299,12 +388,11 @@ export default function create(): Chapter {
       }
       prevBt = bt
       prev = local
-      const decay = (v: number, k: number) => v * Math.exp(-k * dt)
-      env.shake = decay(env.shake, 8)
-      env.flash = decay(env.flash, 16)
-      env.glitch = decay(env.glitch, 9)
-      env.siteHit = decay(env.siteHit, 5)
-      env.bossHit = decay(env.bossHit, 7)
+      env.shake = decay(env.shake, 8, dt)
+      env.flash = decay(env.flash, 16, dt)
+      env.glitch = decay(env.glitch, 9, dt)
+      env.siteHit = decay(env.siteHit, 5, dt)
+      env.bossHit = decay(env.bossHit, 7, dt)
 
       // ------------------------------------------------------------ phases
       const sHP = siteHP(local)
@@ -336,18 +424,16 @@ export default function create(): Chapter {
       const drop = du < 1 ? 7.5 * (1 - du * du) : Math.sin(land * Math.PI) * 0.35 * (1 - land)
       const burstGlitch = pace > 0 && alive && local > T.fire[0] && hash1(Math.floor(t * 3)) > 0.78 ? 0.35 : 0
       _siteC.set(lay.siteX, SITE_CY, 0)
-      boss.update({
-        time: t,
-        pace: rm ? 0.3 : 1,
-        drop,
-        hit: rm ? 0 : bt >= 0 ? Math.max(0, 1 - bt / 0.4) : env.bossHit,
-        glitch: rm ? 0 : Math.min(0.9, burstGlitch + 0.1 * (1 - bHP) + env.glitch * 0.6 + (bt >= 0 ? 0.5 : 0)),
-        recoil: env.bossHit + struckPrev * 0.15,
-        look: _siteC,
-        dying: bt >= 0 && alive ? Math.min(1, bt / 0.2) : 0,
-        core: struckPrev,
-        visible: alive,
-      })
+      bossSt.time = t
+      bossSt.pace = rm ? 0.3 : 1
+      bossSt.drop = drop
+      bossSt.hit = rm ? 0 : bt >= 0 ? Math.max(0, 1 - bt / 0.4) : env.bossHit
+      bossSt.glitch = rm ? 0 : Math.min(0.9, burstGlitch + 0.1 * (1 - bHP) + env.glitch * 0.6 + (bt >= 0 ? 0.5 : 0))
+      bossSt.recoil = env.bossHit + struckPrev * 0.15
+      bossSt.dying = bt >= 0 && alive ? Math.min(1, bt / 0.2) : 0
+      bossSt.core = struckPrev
+      bossSt.visible = alive
+      boss.update(bossSt)
       boss.mouthWorld(_mouth)
       boss.coreWorld(_core)
       _center.set(lay.bossX, BODY_Y, 0)
@@ -355,17 +441,14 @@ export default function create(): Chapter {
       // ------------------------------------------------------------ fx
       px.begin()
       const fire = window01(local, T.fire[0], T.fire[1], 0.03) * (1 - 0.5 * segment(local, T.counter[0], T.fire[1]))
-      const jiggle = bullets.update({
-        time: t,
-        pace,
-        presence: alive ? fire : 0,
-        src: _mouth,
-        target: _siteC,
-        shield: build > 0.5 ? shieldCircle : null,
-        siteR: 0.9,
-        px,
-        heat: { cells: shield.cells, ox: lay.siteX, out: shield.heat },
-      })
+      bulletSt.time = t
+      bulletSt.pace = pace
+      bulletSt.presence = alive ? fire : 0
+      bulletSt.shield = build > 0.5 ? shieldCircle : null
+      bulletSt.px = px
+      if (bulletSt.heat) bulletSt.heat.ox = lay.siteX
+      else bulletSt.heat = { cells: shield.cells, ox: lay.siteX, out: shield.heat }
+      const jiggle = bullets.update(bulletSt)
       const struck = shots.update(
         t,
         alive ? window01(local, T.counter[0], T.counter[1], 0.02) : 0,
@@ -381,7 +464,7 @@ export default function create(): Chapter {
         const e = stepq(dust, 8)
         for (let i = 0; i < boss.feet.length; i++) {
           const f = boss.feet[i]
-          for (const s of [-1, 1]) {
+          for (let s = -1; s <= 1; s += 2) {
             px.push(lay.bossX + f.x + s * e * 0.7, 0.12 + e * 0.35, f.z + 0.3, 0.16 * (1 - e), i % 2 ? P.steel : P.cream, 1)
           }
         }
@@ -423,7 +506,7 @@ export default function create(): Chapter {
 
       // victory fireworks
       if (!rm && local > T.win + 0.01 && local < 0.995) {
-        const cols = [P.gold, P.cyan, P.signal, P.coral]
+        const cols = FIREWORK_COLS
         const n = frame.mobile ? 2 : 3
         for (let s = 0; s < n; s++) {
           const cyc = t / 2.6 + s / n
@@ -461,28 +544,26 @@ export default function create(): Chapter {
         const ph = fract(t / 1.7)
         hop = ph < 0.3 ? stepq(Math.sin((ph / 0.3) * Math.PI), 4) * 0.22 : 0
       }
-      site.update({
-        time: t,
-        pace,
-        damage: siteDamage(local),
-        jolt: env.siteHit,
-        jiggle: Math.min(1.5, jiggle),
-        hop,
-        healthy: segment(local, T.refill[0], T.refill[1]),
-      })
+      siteSt.time = t
+      siteSt.pace = pace
+      siteSt.damage = siteDamage(local)
+      siteSt.jolt = env.siteHit
+      siteSt.jiggle = Math.min(1.5, jiggle)
+      siteSt.hop = hop
+      siteSt.healthy = segment(local, T.refill[0], T.refill[1])
+      site.update(siteSt)
 
       // ------------------------------------------------------------ floor + backdrop
       const wave = local >= T.refill[0] && local < T.refill[1] ? segment(local, T.refill[0], T.refill[1]) * 13 : -1
-      floor.update({
-        time: t,
-        pace,
-        srcX: lay.bossX,
-        corrupt: segment(local, T.fire[0] + 0.01, T.shield[0]),
-        siteX: lay.siteX,
-        safe: build,
-        wave,
-        clean: local >= T.refill[1] ? 1 : 0,
-      })
+      floorSt.time = t
+      floorSt.pace = pace
+      floorSt.srcX = lay.bossX
+      floorSt.corrupt = segment(local, T.fire[0] + 0.01, T.shield[0])
+      floorSt.siteX = lay.siteX
+      floorSt.safe = build
+      floorSt.wave = wave
+      floorSt.clean = local >= T.refill[1] ? 1 : 0
+      floor.update(floorSt)
       const mood = local < T.shield[0] ? 0 : local < T.boom ? 1 : 2
       _band.copy(_bottom).lerp(_top, 0.45)
       back.update(t, pace, mood, dawn, _band)
@@ -501,6 +582,16 @@ export default function create(): Chapter {
         ok ? window01(local, T.shieldTag[0], T.shieldTag[1], 0.012) : 0,
       )
       weakTag.update(_b.copy(_core), cam, frame.width, frame.height, ok && alive ? window01(local, T.weakTag[0], T.weakTag[1], 0.012) : 0)
+
+      // the out-beat iris closes on the victorious site (the classic level-end circle)
+      if (ok && local > T.out[0]) {
+        _b.set(lay.siteX, SITE_CY, 0).project(cam)
+        if (Number.isFinite(_b.x + _b.y)) {
+          const k = smoothstep(T.out[0], T.out[0] + 0.025, local)
+          pp.irisX = 0.5 + (clamp(_b.x * 0.5 + 0.5, 0.25, 0.75) - 0.5) * k
+          pp.irisY = 0.5 + (clamp(_b.y * 0.5 + 0.5, 0.25, 0.75) - 0.5) * k
+        }
+      }
     },
 
     camera(local, frame, out) {

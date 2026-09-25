@@ -5,29 +5,33 @@ import { clamp, lerp, segment } from '../../core/math'
 import { nextFrame } from '../../core/yield'
 import { BRAND, MICROCOPY } from '../../content'
 import { P } from '../../kit/pixel'
+import { PLAYER1_PORTRAIT, PLAYER1_PORTRAIT_MAP } from '../../kit/player1'
 import { PixelLayer } from './layer'
-import { lineCanvas, lineHeight, textWidth, wrap, type TextStyle } from './font'
+import { lineCanvas, lineHeight, spriteCanvas, textWidth, wrap, type TextStyle } from './font'
 import { buildCoin, buildDigits, buildDoor, buildMark, COIN_W, DIGIT_H, DOOR_H, SLOT_DY, type Door, type Mark } from './models'
-import { drawFireworks, drawStars, ring, sparkBurst } from './fx'
+import { drawFireworks, drawStars, ring, sparkBurst, type Lanes } from './fx'
 import { buildHud, measureHud, type Hud, type HudLayout } from './hud'
 import './contact.css'
 
 /*
  * LEVEL 7 · CONTINUE? — the final level (1.6 vh, nav lands at 0.3).
  *
- *   0.00–0.04  the iris opens on a black screen: "CONTINUE?" types in, the
- *              Hark mark sits greyed out (the player is down)
+ *   0.00–0.04  the iris opens on a black screen: "CONTINUE?" types in beside
+ *              the lit Hark mark (the narrator asking you to play on with us)
  *   0.035–0.23 the countdown slams in: 9 · 8 · 7 · 6 · 5 · 4, the mark's
  *              heartbeat pulsing behind it
- *   0.227      …and never reaches zero: the digit flips away, the mark lights
- *              up signal green (the friendly frame)
+ *   0.227      …and never reaches zero: the digit flips away and the mark
+ *              slams centre stage in a burst of sparks (of course you continue)
  *   0.245      the game window opens (stepped, like an RPG box): "Say hello."
  *              The screen slides beside it; INSERT COIN now points at the
  *              email button, and the coin door's slot glows. Hover the button
  *              and a coin appears; click it and the coin drops in (CREDIT 01).
  *   0.52–0.86  the CREDITS roll up through the game screen (scroll-driven),
- *              with pixel fireworks — some of them burst into the Hark mark
- *   0.86–1.00  THANKS FOR PLAYING, the mark, fireworks. The end.
+ *              each line dissolving whole at the screen's edges; STARRING
+ *              PLAYER 1 carries the kid's portrait. Fireworks keep to the
+ *              gutters beside the credits while they roll…
+ *   0.86–1.00  …then THANKS FOR PLAYING, the mark, fireworks (some burst
+ *              into the Hark mark). The end.
  *
  * The 3D props (mark, digits, coin door, coin) are toon-shaded voxels; all
  * text and 2D effects are drawn at the CRT's own game resolution
@@ -47,6 +51,8 @@ const T_OPEN = 0.245
 const T_COMPACT = 0.5
 const T_ROLL0 = 0.52
 const T_ROLL1 = 0.86
+/** the INSERT COIN prompt blinks this long after it appears, then rests lit (WCAG 2.2.2) */
+const BLINK_FOR = 4.5
 
 interface Rect {
   x: number
@@ -69,7 +75,15 @@ interface Anchor {
 }
 
 interface Stack {
-  key: string
+  /** what it was built for (compared field by field: no per-frame key strings) */
+  w: number
+  h: number
+  open: boolean
+  portrait: boolean
+  typed: number
+  credit: number
+  /** bumps on every rebuild (part of the UI layer's redraw signature) */
+  id: number
   items: TextItem[]
   /** the mark once the timer has stopped (centred) */
   mark: Anchor | null
@@ -82,6 +96,9 @@ interface Stack {
   endMark: Anchor | null
   /** scroll (game px) at which the end block is centred */
   endScroll: number
+  /** the rolling column's extent (stack x, game px): fireworks keep outside it */
+  laneX0: number
+  laneX1: number
 }
 
 const ST = {
@@ -113,7 +130,10 @@ const ST = {
   tag: (): TextStyle => ({ scale: 1, bands: [P.gold], outline: P.void }),
 }
 
-type Credit = ['gap'] | ['head' | 'sub' | 'role' | 'name' | 'player', string]
+/** the Player 1 credit's portrait card: a character-select tile */
+const PORTRAIT_CARD = { fill: P.indigo, border: P.steel, outline: P.void }
+
+type Credit = ['gap'] | ['head' | 'sub' | 'role' | 'name' | 'player' | 'star', string]
 const CREDITS: Credit[] = [
   ['head', BRAND.name],
   ['sub', BRAND.locale],
@@ -122,7 +142,7 @@ const CREDITS: Credit[] = [
   ['name', 'Listening'],
   ['gap'],
   ['role', 'Starring'],
-  ['player', MICROCOPY.signalEyebrow],
+  ['star', MICROCOPY.signalEyebrow],
   ['gap'],
   ['role', 'Special thanks'],
   ['name', 'Everyone who said hello'],
@@ -135,6 +155,57 @@ const CREDITS: Credit[] = [
 ]
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
+
+/*
+ * Whole-line dissolve: a line near the screen rect's edge is drawn through a
+ * 4x4 ordered-dither mask (17 levels), the way old credits fade, so a line is
+ * never cut in half by an edge (or seen half under the window). One scratch
+ * canvas and the 17 patterns are made once; nothing is allocated per draw.
+ */
+const scratch = document.createElement('canvas')
+let sctx: CanvasRenderingContext2D | null = null
+const DISSOLVE: CanvasPattern[] = []
+
+function dissolveCtx() {
+  if (sctx) return sctx
+  scratch.width = 128
+  scratch.height = 32
+  const s = scratch.getContext('2d')!
+  for (let lvl = 0; lvl <= 16; lvl++) {
+    const m = document.createElement('canvas')
+    m.width = m.height = 4
+    const mc = m.getContext('2d')!
+    mc.fillStyle = '#000'
+    for (let i = 0; i < 16; i++) if (BAYER[i] < lvl) mc.fillRect(i & 3, i >> 2, 1, 1)
+    DISSOLVE.push(s.createPattern(m, 'repeat')!)
+  }
+  sctx = s
+  return s
+}
+
+/** draw `cv` at (x, y) with only a `k` (0..1) share of its pixels (ordered dither) */
+function drawDissolved(c: CanvasRenderingContext2D, cv: HTMLCanvasElement, x: number, y: number, k: number) {
+  const lvl = Math.round(k * 16)
+  if (lvl <= 0) return
+  if (lvl >= 16) {
+    c.drawImage(cv, x, y)
+    return
+  }
+  let s = dissolveCtx()
+  if (scratch.width < cv.width || scratch.height < cv.height) {
+    scratch.width = Math.max(scratch.width, cv.width)
+    scratch.height = Math.max(scratch.height, cv.height)
+    s = scratch.getContext('2d')!
+  }
+  s.globalCompositeOperation = 'source-over'
+  s.clearRect(0, 0, cv.width, cv.height)
+  s.drawImage(cv, 0, 0)
+  s.globalCompositeOperation = 'destination-in'
+  s.fillStyle = DISSOLVE[lvl]
+  s.fillRect(0, 0, cv.width, cv.height)
+  s.globalCompositeOperation = 'source-over'
+  c.drawImage(scratch, 0, 0, cv.width, cv.height, x, y, cv.width, cv.height)
+}
 
 /** largest integer scale ≤ max at which `text` fits `maxW` (1 if none) */
 function fitScale(text: string, maxW: number, max: number) {
@@ -167,6 +238,7 @@ export default function create(): Chapter {
   let door!: Door
   let coin!: THREE.Group
   let digits = new Map<number, THREE.Group>()
+  const digitList: THREE.Group[] = []
   const digitRoot = new THREE.Group()
 
   let W = 0
@@ -179,8 +251,13 @@ export default function create(): Chapter {
   const rCol: Rect = { x: 0, y: 0, w: 1, h: 1 }
   const rCompact: Rect = { x: 0, y: 0, w: 1, h: 1 }
   const art: Rect = { x: 0, y: 0, w: 1, h: 1 }
+  /** this frame's screen rect (whole game px) */
+  const R: Rect = { x: 0, y: 0, w: 1, h: 1 }
   let artSnap = true
-  let fitKey = ''
+  let fitW = -1
+  let fitH = -1
+  /** CSS px between the window and the screen */
+  let gapCss = 10
 
   // the window (time-based stepped open/close toward a scroll-derived target)
   let openK = 0
@@ -193,9 +270,18 @@ export default function create(): Chapter {
   let friendlyAt = -1e9
   let credits = 0
   let lastCoin = -1e9
-  let shake = { x: 0, y: 0 }
+  const shake = { x: 0, y: 0 }
   let pairK = 1
   let artSnapPair = true
+  // the INSERT COIN blink: restarts when the prompt (re)appears, then rests lit
+  let blinkFrom = -1e9
+  let lastOpen: boolean | null = null
+
+  // where the 2D effects anchor this frame (reused, no per-frame objects)
+  const markAt = { on: false, x: 0, y: 0, h: 0 }
+  const digitAt = { on: false, x: 0, y: 0, h: 0 }
+  const endAt = { on: false, x: 0, y: 0, h: 0 }
+  const lanes: Lanes = { l0: 0, l1: 0, r0: 0, r1: 0 }
 
   let stack: Stack | null = null
 
@@ -216,31 +302,59 @@ export default function create(): Chapter {
   }
 
   function refit(frame: Frame) {
-    const key = `${frame.width}x${frame.height}`
-    if (!hud.dirty && key === fitKey && lay) return
+    if (!hud.dirty && frame.width === fitW && frame.height === fitH && lay) return
     hud.dirty = false
-    fitKey = key
+    fitW = frame.width
+    fitH = frame.height
     lay = measureHud(hud, frame.width, frame.height, mode)
     portrait = lay.portrait
     const s = lay.safe
     cssToRect(s.x0, s.y0, s.x1, s.y1, rFull)
     if (!portrait) {
-      const gap = Math.max(28, frame.width * 0.028)
-      cssToRect(lay.full.x1 + gap, s.y0, s.x1, s.y1, rCol)
+      gapCss = Math.max(28, frame.width * 0.028)
+      cssToRect(lay.full.x1 + gapCss, s.y0, s.x1, s.y1, rCol)
       Object.assign(rCompact, rCol)
     } else {
-      const gap = Math.max(10, frame.height * 0.016)
-      cssToRect(s.x0, s.y0, s.x1, lay.full.y0 - gap, rCol)
-      cssToRect(s.x0, s.y0, s.x1, lay.compact.y0 - gap, rCompact)
+      gapCss = Math.max(10, frame.height * 0.016)
+      cssToRect(s.x0, s.y0, s.x1, lay.full.y0 - gapCss, rCol)
+      cssToRect(s.x0, s.y0, s.x1, lay.compact.y0 - gapCss, rCompact)
     }
   }
+
+  /** keep the screen rect clear of the window as drawn right now (half-open too) */
+  function clearOfWindow(r: Rect, q: number) {
+    if (q <= 0 || !lay) return
+    const wr = mode === 'compact' ? lay.compact : lay.full
+    if (portrait) {
+      const top = wr.y0 + (wr.y1 - wr.y0) * (1 - q) * 0.5
+      const lim = Math.floor(ui.gy(top - gapCss))
+      if (r.y + r.h > lim) r.h = Math.max(1, lim - r.y)
+    } else {
+      const lim = Math.ceil(ui.gx(wr.x1 + gapCss))
+      if (r.x < lim) {
+        r.w = Math.max(1, r.x + r.w - lim)
+        r.x = lim
+      }
+    }
+  }
+
+  /** 32-bit FNV-style mix, for allocation-free redraw signatures */
+  const mix = (h: number, v: number) => Math.imul(h ^ (v | 0), 16777619)
 
   function buildStack(R: Rect, open: boolean, typed: number, credit: number): Stack {
     const w = R.w
     const h = R.h
+    if (
+      stack &&
+      stack.w === w &&
+      stack.h === h &&
+      stack.open === open &&
+      stack.portrait === portrait &&
+      stack.typed === typed &&
+      stack.credit === credit
+    )
+      return stack
     const promptText = open ? (portrait ? '▼ INSERT COIN ▼' : '◀ INSERT COIN') : 'INSERT COIN'
-    const key = `${w}x${h}|${open ? 1 : 0}|${portrait ? 1 : 0}|${typed}|${credit}`
-    if (stack && stack.key === key) return stack
     const items: TextItem[] = []
     const cx = (cv: HTMLCanvasElement) => Math.round((w - cv.width) / 2)
     let mk: Anchor | null = null
@@ -256,7 +370,18 @@ export default function create(): Chapter {
       items.push({ cv: acv, x, y, blink: true })
       if (portrait) items.push({ cv: acv, x: x + pcv.width - acv.width, y, blink: true })
     }
-    if (h >= 92 && w >= 64) {
+    // the prompt, losing its arrow(s) when the rect is too narrow for them
+    let arrowed = open
+    const prompt = (s: number, maxW: number) => {
+      arrowed = open
+      const cv = lineCanvas(promptText, ST.prompt(s))
+      if (cv.width <= maxW || !open) return cv
+      arrowed = false
+      return lineCanvas('INSERT COIN', ST.prompt(s))
+    }
+    // stacked (title / mark / prompt) when tall enough, or tall and narrow
+    // (a phone on its side: the screen is a column beside the window)
+    if ((h >= 80 || (h >= 70 && w < h * 1.4)) && w >= 64) {
       const m = clamp(Math.round(h * 0.05), 2, 14)
       const tMax = h >= 200 && !open ? 4 : h >= 128 ? 3 : 2
       const ts = fitScale('CONTINUE?', w - 4, tMax)
@@ -268,24 +393,28 @@ export default function create(): Chapter {
       const credH = h >= 110 ? lineHeight(1) + 5 : 0
       const dh = clamp(Math.round(h * 0.15), 16, 38)
       const coinH = Math.round(dh * 0.46)
-      const pcv = lineCanvas(promptText, ST.prompt(ps))
+      const pcv = prompt(ps, w - 2)
       const rowH = Math.max(dh, pcv.height)
       const rowY = h - m - credH - rowH
       const dw = Math.round((dh * 13) / 16)
       const gapX = Math.max(5, Math.round(dh * 0.4))
-      const rowW = pcv.width + gapX + dw
+      // the coin door rides beside the prompt when there is room for it
+      const withDoor = pcv.width + gapX + dw <= w - 2
+      const rowW = pcv.width + (withDoor ? gapX + dw : 0)
       const rx = Math.round((w - rowW) / 2)
       const py = rowY + Math.round((rowH - pcv.height) / 2)
       items.push({ cv: pcv, x: rx, y: py, blink: true })
-      arrows(pcv, rx, py, ps)
-      dr = { cx: rx + pcv.width + gapX + dw / 2, cy: rowY + rowH / 2, h: dh }
-      cn = { cx: dr.cx, cy: rowY + rowH / 2 - dh / 2 - coinH * 0.72, h: coinH }
+      if (arrowed) arrows(pcv, rx, py, ps)
+      if (withDoor) {
+        dr = { cx: rx + pcv.width + gapX + dw / 2, cy: rowY + rowH / 2, h: dh }
+        cn = { cx: dr.cx, cy: rowY + rowH / 2 - dh / 2 - coinH * 0.72, h: coinH }
+      }
       if (credH) {
         const ccv = lineCanvas(`Credit ${String(credit).padStart(2, '0')}`, ST.credit())
         items.push({ cv: ccv, x: cx(ccv), y: h - m - ccv.height + 1 })
       }
       const zt = titleB + Math.max(4, Math.round(h * 0.035))
-      const zb = rowY - Math.max(4, Math.round(h * 0.035)) - Math.round(coinH * 0.9)
+      const zb = rowY - Math.max(4, Math.round(h * 0.035)) - (withDoor ? Math.round(coinH * 0.9) : 0)
       const zh = zb - zt
       const zc = (zt + zb) / 2
       const mh = Math.min(zh, Math.round(w * 0.6))
@@ -306,7 +435,7 @@ export default function create(): Chapter {
       }
     } else if (h >= 30 && w >= 90) {
       // a strip: [mark] CONTINUE? / ▼ INSERT COIN ▼ [door]
-      const pcv = lineCanvas(promptText, ST.prompt(1))
+      const pcv = prompt(1, w - 4)
       let ts = h >= 50 ? 2 : 1
       if (Math.max(lineCanvas('CONTINUE?', ST.title(ts)).width, pcv.width) + 8 + 24 > w - 4) ts = 1
       const tfull = lineCanvas('CONTINUE?', ST.title(ts))
@@ -328,18 +457,19 @@ export default function create(): Chapter {
       const px = x0 + Math.round((colW - pcv.width) / 2)
       const py = ty + tfull.height + 4
       items.push({ cv: pcv, x: px, y: py, blink: true })
-      arrows(pcv, px, py, 1)
+      if (arrowed) arrows(pcv, px, py, 1)
       if (withDoor) dr = { cx: rx + rowW - dw / 2, cy: h / 2, h: dh }
     } else if (h >= 12 && w >= 60) {
-      // a thin strip: [mark] ▼ INSERT COIN ▼
-      const pcv = lineCanvas(promptText, ST.prompt(1))
+      // a thin strip: [mark] ▼ INSERT COIN ▼ (the mark only if it fits)
+      const pcv = prompt(1, w - 2)
       const mh = Math.min(h - 2, 30)
-      const rowW = mh + 6 + pcv.width
-      const rx = Math.round((w - rowW) / 2)
-      mk = { cx: rx + mh / 2, cy: h / 2, h: mh }
+      const hasMark = mh + 6 + pcv.width <= w - 2
+      const lead = hasMark ? mh + 6 : 0
+      const rx = Math.round((w - lead - pcv.width) / 2)
+      if (hasMark) mk = { cx: rx + mh / 2, cy: h / 2, h: mh }
       const py = Math.round((h - pcv.height) / 2)
-      items.push({ cv: pcv, x: rx + mh + 6, y: py, blink: true })
-      arrows(pcv, rx + mh + 6, py, 1)
+      items.push({ cv: pcv, x: rx + lead, y: py, blink: true })
+      if (arrowed) arrows(pcv, rx + lead, py, 1)
     }
 
     // ---- the credits
@@ -352,6 +482,19 @@ export default function create(): Chapter {
         continue
       }
       const [kind, text] = c
+      if (kind === 'star') {
+        // STARRING [portrait] PLAYER 1: the kid from every level, face-on
+        const s = textWidth(text, 2) + 3 + 12 * 2 + 12 <= w && w >= 150 ? 2 : 1
+        const pcv = spriteCanvas(PLAYER1_PORTRAIT, PLAYER1_PORTRAIT_MAP, s, PORTRAIT_CARD)
+        const tcv = lineCanvas(text, ST.player(s))
+        const gap = 2 + 2 * s
+        const rowH = Math.max(pcv.height, tcv.height)
+        const x0 = Math.round((w - (pcv.width + gap + tcv.width)) / 2)
+        items.push({ cv: pcv, x: x0, y: y + Math.round((rowH - pcv.height) / 2) })
+        items.push({ cv: tcv, x: x0 + pcv.width + gap, y: y + Math.round((rowH - tcv.height) / 2) })
+        y += rowH + lineGap
+        continue
+      }
       let style: TextStyle
       let s = 1
       if (kind === 'head') {
@@ -371,6 +514,19 @@ export default function create(): Chapter {
         y += cv.height + lineGap
       }
       if (kind === 'role') y += 1
+    }
+
+    // the rolling column's extent: every line so far and the 3D props
+    let lx0 = w / 2
+    let lx1 = w / 2
+    for (const it of items) {
+      lx0 = Math.min(lx0, it.x)
+      lx1 = Math.max(lx1, it.x + it.cv.width)
+    }
+    for (const a of [mk, mp, dg, dr, cn]) {
+      if (!a) continue
+      lx0 = Math.min(lx0, a.cx - a.h * 0.55)
+      lx1 = Math.max(lx1, a.cx + a.h * 0.55)
     }
 
     // ---- THANKS FOR PLAYING (centred in the screen rect at the end)
@@ -410,7 +566,25 @@ export default function create(): Chapter {
       y += cv.height + 2
     }
     const endScroll = Math.round((endTop + y) / 2 - h / 2)
-    stack = { key, items, mark: mk, markPair: mp, digit: dg, door: dr, coin: cn, endMark: em, endScroll }
+    stack = {
+      w,
+      h,
+      open,
+      portrait,
+      typed,
+      credit,
+      id: (stack?.id ?? 0) + 1,
+      items,
+      mark: mk,
+      markPair: mp,
+      digit: dg,
+      door: dr,
+      coin: cn,
+      endMark: em,
+      endScroll,
+      laneX0: Math.floor(lx0),
+      laneX1: Math.ceil(lx1),
+    }
     return stack
   }
 
@@ -422,36 +596,27 @@ export default function create(): Chapter {
     c.beginPath()
     c.rect(R.x - 3, R.y, R.w + 6, R.h)
     c.clip()
+    // the dissolve band at each edge (game px); it narrows as the roll
+    // settles, so the end block rests whole even where it nearly fills the screen
+    const f = Math.min(Math.max(2, Math.min(10, Math.floor(R.h / 6))), Math.max(1, S.endScroll - scroll))
     for (const it of S.items) {
-      const y = R.y + it.y - scroll
-      if (y + it.cv.height < R.y || y > R.y + R.h) continue
       if (it.blink && !blinkOn) continue
-      c.drawImage(it.cv, R.x + it.x, y)
+      const ch = it.cv.height
+      const top = R.y + it.y - scroll
+      if (top + ch <= R.y || top >= R.y + R.h) continue
+      // 1 while a line is clear of both edges, falling to 0 as it reaches
+      // one; a line laid out close to an edge fades over that shorter run,
+      // so it is whole at rest and starts to dissolve as soon as it moves
+      const zt = Math.min(f, it.y)
+      const zb = it.y + ch <= R.h ? Math.min(f, R.h - it.y - ch) : f
+      const dt = top - R.y
+      const db = R.y + R.h - top - ch
+      const kt = zt > 0 ? dt / zt : dt >= 0 ? 1 : 0
+      const kb = zb > 0 ? db / zb : db >= 0 ? 1 : 0
+      const k = Math.min(kt, kb)
+      if (k > 0) drawDissolved(c, it.cv, R.x + it.x, top, Math.min(1, k))
     }
     c.restore()
-    if (scroll > 0) {
-      // the roll fades in and out through an ordered dither at the screen
-      // rect's edges, the way old credits dissolve (no half-cut glyphs)
-      const f = Math.min(8, Math.floor(R.h / 6))
-      const x0 = Math.max(0, R.x - 3)
-      const w = Math.min(ui.gw - x0, R.w + 6)
-      for (const [y0, down] of [
-        [R.y, true],
-        [R.y + R.h - f, false],
-      ] as const) {
-        if (f < 2 || w < 1 || y0 < 0 || y0 + f > ui.gh) continue
-        const img = c.getImageData(x0, y0, w, f)
-        const d = img.data
-        for (let yy = 0; yy < f; yy++) {
-          const edge = down ? yy : f - 1 - yy
-          const keep = ((edge + 1) / (f + 1)) * 16
-          for (let xx = 0; xx < w; xx++) {
-            if (BAYER[((y0 + yy) & 3) * 4 + ((x0 + xx) & 3)] >= keep) d[(yy * w + xx) * 4 + 3] = 0
-          }
-        }
-        c.putImageData(img, x0, y0)
-      }
-    }
     ui.commit()
   }
 
@@ -484,6 +649,7 @@ export default function create(): Chapter {
       for (const d of digits.values()) {
         d.visible = false
         digitRoot.add(d)
+        digitList.push(d)
       }
       group.add(digitRoot)
       await nextFrame()
@@ -498,6 +664,7 @@ export default function create(): Chapter {
       openQ = -1
       artSnap = true
       artSnapPair = true
+      lastOpen = null
     },
 
     onLeave() {
@@ -523,7 +690,10 @@ export default function create(): Chapter {
 
       // ---- the game window: open / close / swap mode, stepped, by time
       const wantOpen = local >= T_OPEN
-      const wantMode: 'full' | 'compact' = portrait && local >= T_COMPACT ? 'compact' : 'full'
+      // compact folds the pitch away for the credits; skip the swap when the
+      // fit already did (short phones), so the window never closes for nothing
+      const canCompact = portrait && !!lay && !lay.sameModes
+      const wantMode: 'full' | 'compact' = canCompact && local >= T_COMPACT ? 'compact' : 'full'
       const target = wantOpen && mode === wantMode ? 1 : 0
       const speed = dt / (calm ? 0.12 : 0.26)
       openK = target > openK ? Math.min(target, openK + speed) : Math.max(target, openK - speed * 1.6)
@@ -540,8 +710,9 @@ export default function create(): Chapter {
       }
       setRise(hud.title, q >= 1)
 
-      // ---- the screen rect: full screen, or beside / above the window
-      const tr = wantOpen ? (wantMode === 'compact' ? rCompact : rCol) : rFull
+      // ---- the screen rect: full screen, or beside / above the window. It
+      // follows the window as drawn (the mode swaps only once it has closed)
+      const tr = wantOpen || q > 0 ? (mode === 'compact' ? rCompact : rCol) : rFull
       if (artSnap) {
         Object.assign(art, tr)
         artSnap = false
@@ -553,7 +724,11 @@ export default function create(): Chapter {
         art.h += (tr.h - art.h) * k
         if (Math.abs(tr.x - art.x) + Math.abs(tr.y - art.y) + Math.abs(tr.w - art.w) + Math.abs(tr.h - art.h) < 0.6) Object.assign(art, tr)
       }
-      const R: Rect = { x: Math.round(art.x), y: Math.round(art.y), w: Math.round(art.w), h: Math.round(art.h) }
+      R.x = Math.round(art.x)
+      R.y = Math.round(art.y)
+      R.w = Math.round(art.w)
+      R.h = Math.round(art.h)
+      clearOfWindow(R, q)
 
       // ---- countdown (scroll-derived); transitions play by time
       const typed = Math.min(9, Math.ceil(segment(local, 0.002, 0.03) * 9))
@@ -584,7 +759,14 @@ export default function create(): Chapter {
       const S = buildStack(R, open, typed, credits)
       const rollK = segment(local, T_ROLL0, T_ROLL1)
       const scroll = Math.round(S.endScroll * (rollK < 1 ? rollK * (1.08 - 0.08 * rollK) : 1))
-      const blinkOn = calm || (t % 1.1) < 0.75
+      // INSERT COIN blinks for a few seconds after it (re)appears, then rests lit
+      if (open !== lastOpen) {
+        lastOpen = open
+        blinkFrom = t
+      }
+      const bAge = t - blinkFrom
+      const blinkDone = calm || bAge > BLINK_FOR
+      const blinkOn = blinkDone || bAge % 1.1 < 0.75
 
       // ---- screen shake (whole game px)
       let sx = 0
@@ -599,12 +781,14 @@ export default function create(): Chapter {
           sy = Math.round((((f * 3) % 5) / 2 - 1) * amp)
         }
       }
-      shake = { x: sx, y: sy }
+      shake.x = sx
+      shake.y = sy
       ui.place(sx, sy)
       fx.place(sx, sy)
 
       // ---- UI layer (text): redraw only when something visible changed
-      const uiKey = `${S.key}|${R.x},${R.y},${R.w},${R.h}|${scroll}|${blinkOn ? 1 : 0}`
+      let uiKey = mix(mix(mix(mix(mix(2166136261, S.id), R.x), R.y), R.w), R.h)
+      uiKey = mix(mix(uiKey, scroll), blinkOn ? 1 : 0)
       if (uiKey !== ui.key) {
         ui.key = uiKey
         drawUi(R, S, scroll, blinkOn)
@@ -621,8 +805,9 @@ export default function create(): Chapter {
       } else pairK = pairT > pairK ? Math.min(1, pairK + dt / 0.3) : Math.max(0, pairK - dt / 0.3)
       const pk = calm ? pairT : Math.round((pairK * pairK * (3 - 2 * pairK)) * 6) / 6
 
-      // the mark on the CONTINUE? screen
-      let markAt: { x: number; y: number; h: number } | null = null
+      // the mark on the CONTINUE? screen: lit the whole time (the narrator
+      // asking you to play on); when the timer gives up it slams and sparks
+      markAt.on = false
       if (S.mark) {
         const a = S.mark
         const b = S.markPair ?? a
@@ -640,22 +825,30 @@ export default function create(): Chapter {
           mark.mesh.material = fAge >= 0 && fAge < 0.1 && !calm ? mark.flash : mark.lit
         } else {
           sc *= 1 + 0.045 * hb
-          mark.mesh.material = mark.dim
+          mark.mesh.material = mark.lit
         }
         mark.mesh.scale.setScalar(sc * ek)
         const sway = calm ? 0 : Math.sin(tStep * 1.4) * 0.2
         mark.mesh.rotation.set(frame.pointer.y * -0.12, sway + frame.pointer.x * 0.2, 0)
-        if (ek > 0) markAt = { x: R.x + ax, y: cy, h: ah }
+        if (ek > 0) {
+          markAt.on = true
+          markAt.x = R.x + ax
+          markAt.y = cy
+          markAt.h = ah
+        }
       } else mark.mesh.visible = false
 
       // the countdown digit beside it
-      for (const d of digits.values()) d.visible = false
-      let digitAt: { x: number; y: number; h: number } | null = null
+      for (let i = 0; i < digitList.length; i++) digitList[i].visible = false
+      digitAt.on = false
       if (S.digit) {
         const a = S.digit
         const cy = R.y + a.cy - scroll
         const ek = edgeK(R, cy, a.h)
-        digitAt = { x: R.x + a.cx, y: cy, h: a.h }
+        digitAt.on = true
+        digitAt.x = R.x + a.cx
+        digitAt.y = cy
+        digitAt.h = a.h
         const flipping = friendly && t - friendlyAt < 0.24 && !calm
         const n = cd > 0 ? cd : 4
         const d = digits.get(n)
@@ -689,7 +882,8 @@ export default function create(): Chapter {
         door.group.rotation.set(0, calm ? -0.1 : Math.sin(tStep * 1.1) * 0.1 - 0.12, 0)
         // the slot glows; green and bright while the email has your attention
         const hot = open && (hud.hover || (coinAge >= 0 && coinAge < 0.9))
-        const pulse = calm ? 0.6 : Math.floor(t * 3) % 3 < 2 ? 1 : 0.35
+        // it pulses with the INSERT COIN blink, then glows steady
+        const pulse = calm ? 0.6 : blinkDone ? 0.85 : Math.floor(bAge * 3) % 3 < 2 ? 1 : 0.35
         door.slot.color.set(hot ? P.signal : P.coral).multiplyScalar(hot ? 2.3 : 1.05 + 0.9 * pulse * (open ? 1 : 0.6))
         // the coin spins over the slot; hover and it sinks toward it; click
         // the email button and it drops in (then a fresh one pops back)
@@ -723,7 +917,7 @@ export default function create(): Chapter {
       } else door.group.visible = false
 
       // the mark at the end of the credits
-      let endAt: { x: number; y: number; h: number } | null = null
+      endAt.on = false
       if (S.endMark) {
         const a = S.endMark
         const cy = R.y + a.cy - scroll
@@ -735,13 +929,19 @@ export default function create(): Chapter {
         endMark.mesh.position.y -= bob * g
         endMark.mesh.scale.setScalar(a.h * g * (1 + 0.05 * hb) * ek)
         endMark.mesh.rotation.set(frame.pointer.y * -0.12, (calm ? 0 : Math.sin(tStep * 1.3) * 0.3) + frame.pointer.x * 0.2, 0)
-        if (ek > 0) endAt = { x: R.x + a.cx, y: cy + bob, h: a.h }
+        if (ek > 0) {
+          endAt.on = true
+          endAt.x = R.x + a.cx
+          endAt.y = cy + bob
+          endAt.h = a.h
+        }
       } else endMark.mesh.visible = false
 
       // ---- FX layer (stars, heartbeat rings, sparks, fireworks) at 12 fps
       const step = Math.floor(t * 12)
       const fwAmt = segment(local, 0.5, 0.84)
-      const fxKey = `${step}|${R.x},${R.y},${R.w},${R.h}|${scroll}|${Math.round(fwAmt * 40)}|${W}x${H}|${pk}`
+      let fxKey = mix(mix(mix(mix(mix(2166136261, step), R.x), R.y), R.w), R.h)
+      fxKey = mix(mix(mix(mix(mix(fxKey, scroll), Math.round(fwAmt * 40)), W), H), pk * 6)
       if (fxKey !== fx.key) {
         fx.key = fxKey
         fx.begin()
@@ -752,25 +952,35 @@ export default function create(): Chapter {
         c.beginPath()
         c.rect(0, R.y - 2, fx.gw, R.h + 4)
         c.clip()
-        if (markAt && !calm) {
+        if (markAt.on && !calm) {
           const p = ((t % 1.15) + 1.15) % 1.15
           const rr = markAt.h * 0.56 + p * markAt.h * 0.5
-          const col = friendly ? (p < 0.35 ? P.signal : p < 0.7 ? P.green : P.pine) : p < 0.4 ? P.steel : P.slate
+          const col = friendly ? (p < 0.35 ? P.signal : p < 0.7 ? P.green : P.pine) : p < 0.4 ? P.green : P.pine
           if (p < 0.95) ring(c, markAt.x, markAt.y, rr, col, p < 0.3 ? 1 : 2)
           sparkBurst(c, markAt.x, markAt.y, t - friendlyAt - 0.05, markAt.h * 0.95, [P.white, P.gold, P.signal, P.green], 7, 20)
         }
-        if (digitAt && !calm) sparkBurst(c, digitAt.x, digitAt.y, t - friendlyAt, digitAt.h * 0.7, [P.white, P.gold, P.orange, P.coral], 13, 14)
+        if (digitAt.on && !calm) sparkBurst(c, digitAt.x, digitAt.y, t - friendlyAt, digitAt.h * 0.7, [P.white, P.gold, P.orange, P.coral], 13, 14)
         if (S.door && door.group.visible) {
           const a = S.door
           const slotY = R.y + a.cy - scroll - SLOT_DY * (a.h / DOOR_H)
           sparkBurst(c, R.x + a.cx, slotY, coinAge - 0.3, a.h * 1.5, [P.white, P.gold, P.signal, P.green], 3, 16)
         }
-        if (endAt && !calm) {
+        if (endAt.on && !calm) {
           const p = (((t + 0.4) % 1.15) + 1.15) % 1.15
           if (p < 0.9) ring(c, endAt.x, endAt.y, endAt.h * 0.58 + p * endAt.h * 0.45, p < 0.35 ? P.signal : P.green, 2)
         }
         c.restore()
-        drawFireworks(c, { x: R.x, y: R.y, w: R.w, h: R.h }, t, fwAmt, calm)
+        // while the credits roll, bursts keep to the gutters either side of
+        // the column (the text stays readable); the end block gets the lot
+        const rolling = rollK < 1
+        if (rolling) {
+          const wr = lay ? (mode === 'compact' ? lay.compact : lay.full) : null
+          lanes.l0 = !portrait && q > 0 && wr ? Math.ceil(fx.gx(wr.x1)) + 3 : 1
+          lanes.l1 = R.x + S.laneX0 - 4
+          lanes.r0 = R.x + S.laneX1 + 4
+          lanes.r1 = fx.gw - 2
+        }
+        drawFireworks(c, R, t, fwAmt, calm, rolling ? lanes : null)
         fx.commit()
       }
 

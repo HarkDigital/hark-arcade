@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { P, glow } from '../../kit/pixel'
-import { clamp, ease, smoothstep } from '../../core/math'
+import { clamp, ease } from '../../core/math'
 import { Builder, R, labelMesh, sheetMesh, canvasTex, FACET, OUTLINE } from './builder'
-import { CLEAR, CRANE, NODES, PLATEAU_H, START, groundAt, wx, wz } from './timeline'
+import { CLEAR, STACK, NODES, PLATEAU_H, START, groundAt, wx, wz } from './timeline'
 
 /*
  * The four level nodes. Each is a little building (static, merged into the
@@ -12,19 +12,23 @@ import { CLEAR, CRANE, NODES, PLATEAU_H, START, groundAt, wx, wz } from './timel
  *   1 LISTEN     a cottage with a giant brass ear-trumpet; sound arcs roll in
  *   2 PROTOTYPE  a saw-tooth workshop, a turning gear, a blueprint on an
  *                easel and a wireframe model spinning over the roof
- *   3 BUILD      a castle under construction; the tower crane sets the last
- *                block on the unfinished tower
+ *   3 BUILD      a castle with an unfinished tower: a glowing ghost outline
+ *                marks the missing course, the blocks stack in one by one
+ *                (falling-block style), a coin pops out, the flag goes up
  *   4 SUPPORT    a cosy inn with a beating heart sign and a smoking chimney
  */
 
 const step = (t: number, fps: number) => Math.floor(t * fps) / fps
+/** light blinks run this long after they start, then hold lit (WCAG 2.2.2) */
+const BLINK_FOR = 4.5
 
 export interface NodeParts {
   group: THREE.Group
   /** world anchors for the HUD tags (pad centres) */
   pads: THREE.Vector3[]
   start: THREE.Vector3
-  update(l: number, time: number, calm: boolean, cam: THREE.Camera): void
+  /** since = seconds since the chapter was entered (blinks settle after BLINK_FOR) */
+  update(l: number, time: number, calm: boolean, cam: THREE.Camera, since: number): void
 }
 
 /* ------------------------------------------------------------------ static buildings */
@@ -112,6 +116,19 @@ function workshop(b: Builder, x: number, y: number, z: number) {
 
 const TOWER_H = 1.28
 const BLOCK_H = 0.52
+/** the missing course: four blocks, back row first, each drops in (8 steps) */
+const BRICK = 0.45
+const BRICKS: [number, number][] = [
+  [-0.235, -0.235],
+  [0.235, -0.235],
+  [-0.235, 0.235],
+  [0.235, 0.235],
+]
+const FALL = 0.011
+const DROP_H = 1.6
+const brickAt = (i: number) => STACK[0] + (i * (STACK[1] - STACK[0] - FALL)) / (BRICKS.length - 1)
+/** coin spin frames (scale.x): full, 3/4, edge, 3/4 */
+const SPIN = [1, 0.62, 0.18, 0.62]
 
 function castle(b: Builder, x: number, y: number, z: number) {
   // keep
@@ -143,33 +160,16 @@ function castle(b: Builder, x: number, y: number, z: number) {
   b.box(tx, y + 3.18, z + 0.1, 0.04, 0.34, 0.04, R.metal)
   b.box(tx + 0.13, y + 3.34, z + 0.1, 0.22, 0.14, 0.02, R.roofPurple)
   b.box(tx, y + 1.4, z + 0.58, 0.12, 0.34, 0.02, R.void)
-  // unfinished tower (east) + scaffolding
+  // unfinished tower (east): flat top, one course short
   const ux = x + 1.55
   b.box(ux, y, z + 0.1, 0.94, TOWER_H, 0.94, R.stone, true)
   b.box(ux, y + TOWER_H - 0.06, z + 0.1, 0.8, 0.06, 0.8, R.stoneDark)
-  for (const [dx, dz] of [[-0.58, 0.64], [0.58, 0.64], [-0.58, -0.44], [0.58, -0.44]]) b.box(ux + dx, y, z + 0.1 + dz, 0.06, 2.3, 0.06, R.wood)
-  for (const h of [0.7, 1.4, 2.1]) {
-    b.box(ux, y + h, z + 0.74, 1.24, 0.05, 0.06, R.wood)
-    b.box(ux + 0.6, y + h, z + 0.1, 0.06, 0.05, 1.14, R.wood)
-  }
-  b.box(ux, y + 1.4, z + 0.74, 1.2, 0.04, 0.22, R.plank)
-  // stacked blocks + a wheelbarrow of stone by the gate
+  b.box(ux, y + 0.7, z + 0.58, 0.12, 0.3, 0.02, R.void)
+  // spare blocks stacked by the gate
   b.box(x + 1.0, y, z + 1.25, 0.32, 0.24, 0.32, R.stone, true)
   b.box(x + 1.36, y, z + 1.2, 0.32, 0.24, 0.32, R.stone, true)
   b.box(x + 1.18, y + 0.24, z + 1.22, 0.32, 0.24, 0.32, R.stone, true)
-  // tower crane (mast east of the castle)
-  const cx = x + 2.9
-  b.box(cx, y, z - 0.1, 0.5, 0.14, 0.5, R.stoneDark, true)
-  b.box(cx, y + 0.14, z - 0.1, 0.22, 3.2, 0.22, R.crane, true)
-  for (let i = 0; i < 8; i++) b.box(cx, y + 0.3 + i * 0.38, z + 0.015, 0.16, 0.05, 0.01, R.dark)
-  const jy = y + 3.34
-  b.box(cx, jy - 0.1, z - 0.1, 0.36, 0.34, 0.36, R.crane, true)
-  b.box(cx + 0.02, jy, z + 0.085, 0.22, 0.14, 0.01, R.glass)
-  b.box(cx - 1.5, jy + 0.24, z - 0.1, 3.4, 0.14, 0.16, R.crane, true)
-  for (let i = 0; i < 9; i++) b.box(cx - 2.95 + i * 0.36, jy + 0.29, z - 0.015, 0.05, 0.05, 0.01, R.dark)
-  b.box(cx + 0.55, jy + 0.1, z - 0.1, 0.34, 0.3, 0.3, R.stoneDark, true)
-  b.box(cx, jy + 0.38, z - 0.1, 0.06, 0.5, 0.06, R.crane)
-  return { unfinished: new THREE.Vector3(ux, y + TOWER_H, z + 0.1), jibY: jy + 0.24, craneX: cx, jibZ: z - 0.1, tip: new THREE.Vector3(cx - 3.15, jy + 0.45, z - 0.1) }
+  return { unfinished: new THREE.Vector3(ux, y + TOWER_H, z + 0.1) }
 }
 
 function inn(b: Builder, x: number, y: number, z: number) {
@@ -347,19 +347,25 @@ function gearBuilder() {
 }
 
 function wireCube(size: number, mat: THREE.Material) {
+  return wireBox(size, size, size, 0.05, mat)
+}
+
+/** the 12 edges of a w×h×d box as thin bars (centred) */
+function wireBox(w: number, h: number, d: number, t: number, mat: THREE.Material) {
   const g: THREE.BufferGeometry[] = []
-  const t = 0.05
-  const h = size / 2
+  const hw = w / 2
+  const hh = h / 2
+  const hd = d / 2
   const edges: [number, number, number, number, number, number][] = []
-  for (const a of [-h, h])
-    for (const c of [-h, h]) {
-      edges.push([0, a, c, size + t, t, t])
-      edges.push([a, 0, c, t, size + t, t])
-      edges.push([a, c, 0, t, t, size + t])
-    }
-  for (const [x, y, z, w, hh, d] of edges) {
-    const bx = new THREE.BoxGeometry(w, hh, d)
-    bx.translate(x, y, z)
+  for (const a of [-hh, hh])
+    for (const c of [-hd, hd]) edges.push([0, a, c, w + t, t, t])
+  for (const a of [-hw, hw])
+    for (const c of [-hd, hd]) edges.push([a, 0, c, t, h + t, t])
+  for (const a of [-hw, hw])
+    for (const c of [-hh, hh]) edges.push([a, c, 0, t, t, d + t])
+  for (const [ex, ey, ez, ew, eh, ed] of edges) {
+    const bx = new THREE.BoxGeometry(ew, eh, ed)
+    bx.translate(ex, ey, ez)
     g.push(bx)
   }
   const merged = mergeBoxes(g)
@@ -445,22 +451,12 @@ export function buildNodes(hooks: ReturnType<typeof buildStatic>, mobile: boolea
     fg: P.cream,
     outline: P.void,
     shadow: P.magenta,
-    height: 0.5,
+    height: 0.56,
     plate: { bg: P.night, border: P.signal },
   })
-  ready.position.set(sx, 1.72, sz)
+  ready.position.set(sx, 2.02, sz)
   group.add(ready)
-  const won = labelMesh('WORLD CLEAR!', {
-    font: 'display',
-    px: 16,
-    fg: P.gold,
-    outline: P.void,
-    shadow: P.magenta,
-    height: 0.62,
-    plate: { bg: P.night, border: P.cream },
-  })
-  won.visible = false
-  group.add(won)
+  let readyT0 = -1
 
   // ---- 1 LISTEN: sound arcs rolling into the trumpet, an antenna light
   const arcs = [5, 8, 11].map(s => {
@@ -498,33 +494,45 @@ export function buildNodes(hooks: ReturnType<typeof buildStatic>, mobile: boolea
   const wireCore = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), glow(P.cyan, 1.3))
   wire.add(wireCore)
 
-  // ---- 3 BUILD: trolley, cable, hook + the last block; tower top appears
+  // ---- 3 BUILD: the missing course stacks in block by block (a ghost
+  // outline marks the spot), a coin pops out, the flag goes up on CLEAR!
   const C = hooks.C
-  const trolleyB = new Builder()
-  trolleyB.box(0, -0.06, 0, 0.24, 0.12, 0.26, R.dark, true, true)
-  const trolley = trolleyB.mesh()
-  group.add(trolley)
-  const cable = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1, 0.03), new THREE.MeshBasicMaterial({ color: P.void }))
-  group.add(cable)
-  const payB = new Builder()
-  payB.outlineWidth = 0.03
-  payB.box(0, 0, 0, 0.94, BLOCK_H, 0.94, R.stone, true)
-  payB.box(0, BLOCK_H - 0.02, 0.1, 0.84, 0.02, 0.02, R.stoneDark)
-  payB.box(0, BLOCK_H, 0, 0.1, 0.12, 0.1, R.metal)
-  payB.box(0, BLOCK_H + 0.12, 0, 0.2, 0.06, 0.06, R.dark)
-  const payload = payB.mesh()
-  group.add(payload)
-  const topB = new Builder()
-  topB.outlineWidth = 0.03
-  for (const [dx, dz] of [[-0.33, 0.33], [0.33, 0.33], [-0.33, -0.33], [0.33, -0.33]]) topB.box(dx, 0, dz, 0.22, 0.2, 0.22, R.stone, true)
-  topB.box(0, 0, 0, 0.04, 0.5, 0.04, R.metal)
-  topB.box(0.13, 0.36, 0, 0.22, 0.14, 0.02, R.signal)
-  const towerTop = topB.mesh()
+  const brickB = new Builder()
+  brickB.outlineWidth = 0.025
+  brickB.box(0, 0, 0, BRICK, BLOCK_H, BRICK, R.stone, true)
+  brickB.box(0, BLOCK_H * 0.46, BRICK / 2 + 0.005, BRICK - 0.1, 0.035, 0.01, R.stoneDark)
+  const brickGeo = brickB.geometry()
+  const brickOut = brickB.outlineGeometry()
+  const bricks = BRICKS.map(() => {
+    const m = new THREE.Mesh(brickGeo, FACET)
+    if (brickOut) {
+      const o = new THREE.Mesh(brickOut, OUTLINE)
+      o.renderOrder = -1
+      m.add(o)
+    }
+    m.visible = false
+    group.add(m)
+    return m
+  })
+  const ghost = wireBox(0.94, BLOCK_H, 0.94, 0.045, glow(P.cyan, 1.25))
+  ghost.position.set(C.unfinished.x, C.unfinished.y + BLOCK_H / 2, C.unfinished.z)
+  group.add(ghost)
+  const coinB = new Builder()
+  coinB.outlineWidth = 0.025
+  coinB.box(0, -0.17, 0, 0.22, 0.34, 0.06, R.coin, true)
+  coinB.box(0, -0.12, 0, 0.34, 0.24, 0.06, R.coin, true)
+  coinB.box(0, -0.1, 0.035, 0.06, 0.2, 0.01, [P.orange, P.orange, P.orange])
+  const coin = coinB.mesh()
+  coin.visible = false
+  group.add(coin)
+  const towerTopB = new Builder()
+  towerTopB.outlineWidth = 0.03
+  for (const [dx, dz] of [[-0.33, 0.33], [0.33, 0.33], [-0.33, -0.33], [0.33, -0.33]]) towerTopB.box(dx, 0, dz, 0.22, 0.2, 0.22, R.stone, true)
+  towerTopB.box(0, 0, 0, 0.04, 0.5, 0.04, R.metal)
+  towerTopB.box(0.13, 0.36, 0, 0.22, 0.14, 0.02, R.signal)
+  const towerTop = towerTopB.mesh()
   towerTop.position.set(C.unfinished.x, C.unfinished.y + BLOCK_H, C.unfinished.z)
   group.add(towerTop)
-  const craneLamp = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), glow(P.coral, 2.2))
-  craneLamp.position.copy(C.tip)
-  group.add(craneLamp)
 
   // ---- 4 SUPPORT: heart sign, chimney smoke, lantern
   const heart = heartBuilder()
@@ -552,9 +560,11 @@ export function buildNodes(hooks: ReturnType<typeof buildStatic>, mobile: boolea
     group,
     pads,
     start: new THREE.Vector3(sx, 0, sz),
-    update(l, time, calm, cam) {
+    update(l, time, calm, cam, since) {
       tmpQ.copy(cam.quaternion)
       const t8 = step(time, 8)
+      // light blinks run for a few seconds after the level opens, then hold lit
+      const lit = calm || since > BLINK_FOR
       // ---- pads, flags, CLEAR! signs
       for (let i = 0; i < 4; i++) {
         const c = CLEAR[i]
@@ -571,7 +581,7 @@ export function buildNodes(hooks: ReturnType<typeof buildStatic>, mobile: boolea
         }
         const s = clamp((l - c - 0.004) / 0.012)
         const lab = clears[i]
-        // the last node's sign gives way to WORLD CLEAR! in the out-beat
+        // the last node's sign gives way to the WORLD CLEAR! banner (DOM)
         lab.visible = s > 0 && !(i === 3 && l >= 0.945)
         if (s > 0) {
           const sc = s >= 1 ? 1 : Math.max(0.01, ease.outBack(s))
@@ -581,67 +591,73 @@ export function buildNodes(hooks: ReturnType<typeof buildStatic>, mobile: boolea
           lab.position.y = pads[i].y + 1.55 + bob
         }
       }
-      // ---- READY? / WORLD CLEAR!
-      ready.visible = l < 0.085 && (calm || Math.floor(time * 2.5) % 3 !== 2)
-      ready.quaternion.copy(tmpQ)
-      const wk = clamp((l - 0.945) / 0.02)
-      won.visible = wk > 0
-      if (wk > 0) {
-        won.scale.setScalar(wk >= 1 ? 1 : Math.max(0.01, ease.outBack(wk)))
-        won.quaternion.copy(tmpQ)
-        won.position.set(pads[3].x, pads[3].y + 2.45 + (calm ? 0 : (Math.floor(time * 2) % 2) * 0.05), pads[3].z)
+      // ---- READY? blinks 3 times from when it shows, then holds lit
+      if (l < 0.085) {
+        if (readyT0 < 0) readyT0 = time
+        const rt = time - readyT0
+        ready.visible = calm || rt > 3.6 || Math.floor(rt * 2.5) % 3 !== 2
+        ready.quaternion.copy(tmpQ)
+      } else {
+        readyT0 = -1
+        ready.visible = false
       }
 
       // ---- LISTEN: arcs roll in far → near, 6 fps; the lamp blinks
       const beat = calm ? 3 : Math.floor(time * 6) % 5
-      arcs.forEach((a, i) => {
+      for (let i = 0; i < arcs.length; i++) {
+        const a = arcs[i]
         a.visible = calm ? true : beat === 2 - i || beat === 3 - i
         a.quaternion.copy(tmpQ)
         a.scale.x = -1
-      })
-      lamp.visible = calm || Math.floor(time * 1.5) % 2 === 0
+      }
+      lamp.visible = lit || Math.floor(time * 1.5) % 2 === 0
       // ---- PROTOTYPE: gear steps round, model spins + bobs on steps
       gear.rotation.z = calm ? 0 : -Math.floor(time * 6) * (Math.PI / 16)
       wire.rotation.y = calm ? 0.6 : step(time, 10) * 0.9
       wire.rotation.x = 0.35
       wire.position.y = hooks.W.model.y + (calm ? 0 : (Math.floor(time * 2) % 2) * 0.05)
-      // ---- BUILD: the crane sets the last block (scroll-driven)
-      const [c0, c1] = CRANE
-      const k = clamp((l - c0) / (c1 - c0))
-      const pickX = C.craneX - 1.1
-      const dropX = C.unfinished.x
-      const tx = l < c0 ? pickX : THREE.MathUtils.lerp(pickX, dropX, smoothstep(0, 0.42, k))
-      const high = 1.25
-      const land = C.jibY - (C.unfinished.y + BLOCK_H + 0.18)
-      const placed = l >= CLEAR[2]
-      let drop = high
-      if (!placed) drop = THREE.MathUtils.lerp(high, land, smoothstep(0.45, 1, k))
-      else drop = THREE.MathUtils.lerp(land, high * 0.8, smoothstep(CLEAR[2] + 0.004, CLEAR[2] + 0.03, l))
-      const sway = calm || placed || (k > 0.4 && k < 1) ? 0 : ((Math.floor(time * 3) % 2) * 2 - 1) * 0.02
-      trolley.position.set(placed ? dropX : tx, C.jibY, C.jibZ)
-      cable.scale.y = drop
-      cable.position.set((placed ? dropX : tx) + sway * 0.5, C.jibY - drop / 2, C.jibZ)
-      payload.visible = true
-      if (placed) payload.position.set(C.unfinished.x, C.unfinished.y, C.unfinished.z)
-      else payload.position.set(tx + sway, C.jibY - drop - BLOCK_H - 0.18, C.jibZ)
-      if (!placed) payload.position.z = C.jibZ
-      // once set, it's part of the tower (square it to the tower footprint)
-      if (placed) payload.position.z = C.unfinished.z
+      // ---- BUILD: blocks drop in on 8 steps, a little squash as each lands,
+      // a coin pops out of the finished course (all scroll-driven)
+      const top = C.unfinished.y
+      let landed = 0
+      for (let i = 0; i < BRICKS.length; i++) {
+        const m = bricks[i]
+        const t0 = brickAt(i)
+        m.visible = l >= t0
+        if (!m.visible) continue
+        const k = clamp((l - t0) / FALL)
+        const kq = Math.floor(k * 8) / 8
+        const land = t0 + FALL
+        const squash = l >= land && l < land + 0.003
+        if (l >= land) landed++
+        m.position.set(C.unfinished.x + BRICKS[i][0], top + (1 - kq * kq) * DROP_H, C.unfinished.z + BRICKS[i][1])
+        m.scale.set(squash ? 1.06 : 1, squash ? 0.84 : 1, squash ? 1.06 : 1)
+      }
+      ghost.visible = landed < BRICKS.length
+      const ck = (l - STACK[1]) / 0.012
+      coin.visible = ck > 0 && ck < 1
+      if (coin.visible) {
+        const q = Math.floor(ck * 12) / 12
+        const sc = q < 0.7 ? 1 : 1 - (q - 0.7) / 0.3
+        coin.position.set(C.unfinished.x, top + BLOCK_H + 0.3 + Math.sin(q * Math.PI * 0.5) * 0.95, C.unfinished.z)
+        coin.quaternion.copy(tmpQ)
+        coin.scale.set(Math.max(0.01, SPIN[Math.floor(q * 12) % 4] * sc), Math.max(0.01, sc), Math.max(0.01, sc))
+      }
       const topK = clamp((l - CLEAR[2] - 0.002) / 0.012)
       towerTop.visible = topK > 0
       towerTop.scale.set(1, topK >= 1 ? 1 : Math.max(0.01, ease.outBack(topK)), 1)
-      craneLamp.visible = calm || Math.floor(time * 1.2 + 0.5) % 2 === 0
       // ---- SUPPORT: heartbeat (two beats, pause), smoke puffs, lantern flicker
       const hb = calm ? 0 : Math.floor(time * 4) % 5
       heart.scale.setScalar(hb === 0 || hb === 2 ? 1.16 : 1)
-      puffs.forEach((p, i) => {
+      for (let i = 0; i < puffs.length; i++) {
+        const p = puffs[i]
         const ph = calm ? 0.35 + i * 0.25 : ((time * 0.55 + i / 3) % 1)
         const q = Math.floor(ph * 8) / 8
         p.position.set(hooks.I.chimney.x + q * 0.35, hooks.I.chimney.y + q * 1.2, hooks.I.chimney.z)
         p.scale.setScalar(0.5 + q * 0.9)
         p.visible = q < 0.9
-      })
-      lantern.visible = calm || Math.floor(t8 * 8) % 7 !== 0
+      }
+      lantern.visible = lit || Math.floor(t8 * 8) % 7 !== 0
     },
   }
 }

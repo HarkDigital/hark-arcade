@@ -22,11 +22,17 @@ import { ICON, pixelMark } from './pixelart'
  *                 "Menu" button opens the PAUSE MENU (a real modal dialog: the
  *                 game freezes behind it, level select, Start a project,
  *                 sound, email)
- *   bottom-left   Sound: Off / On with a pixel speaker (waves animate when on)
+ *   bottom-left   Sound: Off / On with a pixel speaker (the waves pulse a few
+ *                 times when it comes on, then stay lit)
  *   bottom-right  the level readout "LEVEL 3 · Power-Ups · Services", seven
  *                 clickable level pips (cleared / current / locked; the current
  *                 one charges up with progress through the level) and three
  *                 decorative hearts
+ *
+ * Small screens (ui.css): <= 380px drops the hearts, <= 359px shows the sound
+ * toggle as its icon; short landscape (the base.css --safe-top/--safe-bottom
+ * query) collapses the HUD to a compact brand + 1UP, an icon sound toggle and
+ * the level pips only.
  *
  * API: createChrome(root, engine, sound) -> { update(frame, state) }
  */
@@ -328,6 +334,11 @@ export function createChrome(root: HTMLElement, engine: Engine, sound: Sound) {
     menu.scrollTop = 0
     const now = menuLinks[lastIndex] ?? menuLinks[0]
     now?.focus({ preventScroll: true })
+    // a short screen (landscape phone, 400% zoom): bring the focused level into view
+    if (now) {
+      const r = now.getBoundingClientRect()
+      if (r.bottom > window.innerHeight - 8) menu.scrollTop += r.bottom - window.innerHeight + 24
+    }
   }
   const closeMenu = (restoreFocus = true) => {
     if (!menuOpen) return

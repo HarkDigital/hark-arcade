@@ -1,7 +1,7 @@
 import { el, rise, setRise } from '../../core/dom'
 import { MICROCOPY, SECTIONS, SERVICES } from '../../content'
 import { ICONS, SHORT } from './art'
-import { artDataUrl } from './gfx'
+import { artDataUrl, qBlockDataUrl } from './gfx'
 
 /*
  * Game UI for Power-Ups. Scroll decides WHAT is up; CSS (stepped) decides how
@@ -13,10 +13,20 @@ import { artDataUrl } from './gfx'
  *   card    ITEM CARD window: ITEM 07 / 11, icon slot, title, blurb (types
  *           out fast, then settles to the exact text), tags, and a 01–11
  *           inventory bar that lands on each item
+ *   next    once the last item has slid out of view the card turns to
+ *           NEXT ▶ ? BLOCK 08 (compact on wide layouts; on tall ones the
+ *           window keeps its size so the scene above it never reframes)
  *   power   POWER UP! as all eleven items orbit the player
  */
 
 const pad = (n: number) => String(n).padStart(2, '0')
+/**
+ * Tall layout (scene on top, windows at the bottom): the same query as the
+ * portrait block in services.css. A phone held sideways is short landscape
+ * (max-height 500px), which keeps the windows beside the scene.
+ */
+const TALL_QUERY =
+  '(max-width: 767px) and (orientation: portrait), (max-width: 767px) and (min-height: 501px), (max-aspect-ratio: 4/5)'
 const esc = (s: string) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 const titleHtml = (t: string) => {
   const i = t.lastIndexOf(' ')
@@ -43,13 +53,17 @@ export interface HudMetrics {
   gutter: number
   card: HudBox
   intro: HudBox
+  /** bottom of the POWER UP! banner (px): the finale frames the scene below it */
+  powerBottom: number
 }
 
 export interface HudState {
   ready: boolean
   intro: boolean
-  /** -1 = no card, else the item the card names */
+  /** -1 = no item card, else the item the card names */
   shown: number
+  /** -1, else the card is up in its NEXT ▶ state for this ?-block */
+  next: number
   /** how many items are collected (for the bar) */
   got: number
   power: boolean
@@ -72,10 +86,14 @@ export class Hud {
   private cardWin: HTMLElement
   private slides: Slide[] = []
   private bar: HTMLButtonElement[] = []
+  private nextSlide: HTMLElement
+  private nextTitle: HTMLElement
+  private nextCount: HTMLElement
   private power: HTMLElement
   private powerTitle: HTMLElement
   private probe: HTMLElement
-  private last: HudState = { ready: false, intro: false, shown: -2, got: -1, power: false }
+  private tallMq: MediaQueryList | null = typeof matchMedia === 'function' ? matchMedia(TALL_QUERY) : null
+  private last: HudState = { ready: false, intro: false, shown: -2, next: -2, got: -1, power: false }
   private typeT0 = 0
   private typing = -1
   private dirty = true
@@ -88,6 +106,7 @@ export class Hud {
     gutter: 16,
     card: { left: 0, top: 0, right: 0, bottom: 0 },
     intro: { left: 0, top: 0, right: 0, bottom: 0 },
+    powerBottom: 0,
   }
 
   constructor(
@@ -157,6 +176,20 @@ export class Hud {
       for (const t of s.tags) el('li', 'hud-tag', t, tags)
       this.slides.push({ root, title, typed, rest, text: s.blurb })
     })
+    // NEXT ▶ ? BLOCK 0k: shares the slides' cell, so on tall layouts the
+    // window keeps the item card's size while it shows
+    this.nextSlide = el('article', 'svc-slide svc-next', undefined, slides)
+    const nHead = el('header', 'svc-card-head', undefined, this.nextSlide)
+    this.nextCount = el('p', 'svc-count', undefined, nHead)
+    const nGet = el('p', 'svc-get svc-next-get', 'Next', nHead)
+    el('i', 'svc-next-arrow', undefined, nGet)
+    const nTop = el('div', 'svc-slide-top svc-next-top', undefined, this.nextSlide)
+    const nFrame = el('div', 'svc-frame svc-next-frame', undefined, nTop)
+    const qImg = el('img', '', undefined, nFrame)
+    qImg.src = qBlockDataUrl()
+    qImg.alt = ''
+    qImg.style.setProperty('--w', '16')
+    this.nextTitle = el('h3', 'hud-h2 svc-title svc-next-title', undefined, nTop)
     const bar = el('nav', 'svc-bar', undefined, this.cardWin)
     SERVICES.forEach((s, k) => {
       const b = el('button', 'svc-pip', undefined, bar)
@@ -179,7 +212,7 @@ export class Hud {
     this.probe.setAttribute('aria-hidden', 'true')
 
     const ro = new ResizeObserver(() => (this.dirty = true))
-    for (const n of [stage, this.introWin, this.cardWin, this.probe]) ro.observe(n)
+    for (const n of [stage, this.introWin, this.cardWin, this.probe, this.power]) ro.observe(n)
   }
 
   metrics(): HudMetrics {
@@ -188,7 +221,7 @@ export class Hud {
       const m = this.m
       m.w = this.stage.offsetWidth
       m.h = this.stage.offsetHeight
-      m.tall = m.w < 768 || m.w / Math.max(1, m.h) < 0.8
+      m.tall = this.tallMq ? this.tallMq.matches : m.w < 768 || m.w / Math.max(1, m.h) < 0.8
       m.safeTop = this.probe.offsetTop
       m.safeBottom = m.h - (this.probe.offsetTop + this.probe.offsetHeight)
       m.gutter = this.probe.offsetLeft
@@ -200,6 +233,7 @@ export class Hud {
       }
       box(this.card, this.cardWin, m.card)
       box(this.intro, this.introWin, m.intro)
+      m.powerBottom = this.power.offsetTop + this.power.offsetHeight
       if (!m.h || !m.card.bottom) this.dirty = true
     }
     return this.m
@@ -213,23 +247,37 @@ export class Hud {
       setOn(this.intro, s.intro)
       setRise(this.introTitle, s.intro)
     }
-    if (s.shown !== L.shown) {
+    if (s.shown !== L.shown || s.next !== L.next) {
       const prev = L.shown
+      const wasUp = L.shown >= 0 || L.next >= 0
+      const up = s.shown >= 0 || s.next >= 0
+      const nextChanged = s.next !== L.next
       L.shown = s.shown
-      setOn(this.card, s.shown >= 0)
+      L.next = s.next
+      setOn(this.card, up)
+      setOn(this.card, s.next >= 0, 'is-next')
+      setOn(this.nextSlide, s.next >= 0)
+      if (nextChanged && s.next >= 0) {
+        const n = pad(s.next + 1)
+        this.nextTitle.innerHTML = `? Block <em>${n}</em>`
+        this.nextCount.innerHTML = `Item <b>${n}</b> / ${pad(SERVICES.length)}`
+      }
       this.slides.forEach((it, k) => {
         setOn(it.root, k === s.shown)
         setRise(it.title, k === s.shown)
       })
-      this.bar.forEach((b, k) => setOn(b, k === s.shown, 'is-cur'))
+      this.bar.forEach((b, k) => {
+        setOn(b, k === s.shown, 'is-cur')
+        setOn(b, k === s.next, 'is-next')
+      })
       // a new item types its description out (fast), then settles exact
       if (s.shown >= 0 && prev >= -1 && !this.calm) {
         this.typing = s.shown
         this.typeT0 = time
         this.type(this.slides[s.shown], 0)
       } else if (s.shown >= 0) this.type(this.slides[s.shown], 1)
-      // the window pops like a game menu when the item changes
-      if (s.shown >= 0 && prev >= 0 && !this.calm && typeof this.cardWin.animate === 'function') {
+      // the window pops like a game menu when what it shows changes
+      if (up && wasUp && !this.calm && typeof this.cardWin.animate === 'function') {
         this.cardWin.animate(
           [{ transform: 'translate(0, 0)' }, { transform: 'translate(0, -6px)' }, { transform: 'translate(0, 2px)' }, { transform: 'none' }],
           { duration: 240, easing: 'steps(4, end)' },

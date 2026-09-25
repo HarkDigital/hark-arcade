@@ -36,15 +36,15 @@ export const THEMES: Theme[] = [
   { side: P.blue, s1: P.gold, s2: P.orange, trim: P.gold, bands: [P.night, P.blue, P.orange, P.gold], bg: P.night, accent: P.gold, ink: P.void, shadow: P.cream },
   { side: P.magenta, s1: P.gold, s2: P.cream, trim: P.gold, bands: [P.purple, P.magenta, P.coral, P.orange], bg: P.night, accent: P.gold, ink: P.cream, shadow: P.void },
   { side: P.coral, s1: P.purple, s2: P.gold, trim: P.orange, bands: [P.night, P.coral, P.orange, P.gold], bg: P.night, accent: P.orange, ink: P.void, shadow: P.cream },
-  // the house machine: the high-score cabinet
+  // the house machine: the multi-game cabinet (the other sites)
   { side: P.night, s1: P.signal, s2: P.gold, trim: P.signal, bands: [P.void, P.night, P.pine, P.green], bg: P.void, accent: P.signal, ink: P.gold, shadow: P.void },
 ]
 
-export function canvas(w: number, h: number) {
+export function canvas(w: number, h: number, readback = false) {
   const cv = document.createElement('canvas')
   cv.width = w
   cv.height = h
-  const g = cv.getContext('2d')!
+  const g = cv.getContext('2d', readback ? { willReadFrequently: true } : undefined)!
   g.imageSmoothingEnabled = false
   return { cv, g }
 }
@@ -143,9 +143,10 @@ export function drawAttract(names: string[]) {
       g.font = `400 8px ${FONT_MONO}`
       g.textBaseline = 'top'
       g.fillStyle = P.steel
-      g.fillText(`CAB ${String(i + 1).padStart(2, '0')}`, 6, 5)
+      const house = i === names.length - 1
+      g.fillText(house ? 'MENU' : `CAB ${String(i + 1).padStart(2, '0')}`, 6, 5)
       g.fillStyle = t.accent
-      const hi = i === names.length - 1 ? 'HARK' : '1UP'
+      const hi = house ? 'HARK' : '1UP'
       g.fillText(hi, w - 6 - g.measureText(hi).width, 5)
       // title
       g.font = `700 22px ${FONT_DISPLAY}`
@@ -161,7 +162,7 @@ export function drawAttract(names: string[]) {
       // insert coin
       g.font = `400 8px ${FONT_MONO}`
       g.textBaseline = 'top'
-      const ic = i === names.length - 1 ? 'HIGH SCORES' : 'INSERT COIN'
+      const ic = house ? 'SELECT GAME' : 'INSERT COIN'
       const iw = g.measureText(ic).width
       g.fillStyle = P.void
       g.fillRect(Math.round((w - iw) / 2) - 3, 98, Math.ceil(iw) + 6, 12)
@@ -418,43 +419,102 @@ export function drawSkyline(far: boolean) {
 
 // ------------------------------------------------------------------ neon signs
 
-/** Neon text: a coloured tube stroke with a pale hot core. */
-export function drawNeonText(text: string, tube: string, px = 26) {
+/**
+ * Neon letters, painted at about one texel per game pixel of a close shot so
+ * the CRT pass keeps the letterforms: the glyph mask is thresholded (no soft
+ * edges for the dither to smear), the tube is the letter in its own colour and
+ * the hot core is a thin cream line down its middle (texels 3+ from the edge:
+ * ~2 of a 6-texel stem at 40px). Wide tracking keeps the letters apart; there
+ * is no baked halo (the bloom pass supplies the glow).
+ * `aspect` is width / height of the letters themselves, so a sign's world
+ * height is its cap height.
+ */
+export function drawNeonText(text: string, tube: string, px = 40) {
+  const font = `400 ${px}px ${FONT_DISPLAY}`
+  const pad = 2
+  const chars = [...text]
   const probe = canvas(4, 4).g
-  probe.font = `700 ${px}px ${FONT_DISPLAY}`
-  const tw = Math.ceil(probe.measureText(text).width)
-  const pad = 6
-  const { cv, g } = canvas(tw + pad * 2, Math.ceil(px * 1.4) + pad)
+  const size = () => {
+    probe.font = font
+    const track = Math.max(3, Math.round(px * 0.16))
+    const adv = chars.map(c => probe.measureText(c).width)
+    const m = probe.measureText(text)
+    const asc = Math.ceil(m.actualBoundingBoxAscent || px * 0.62)
+    const desc = Math.max(0, Math.ceil(m.actualBoundingBoxDescent || 0))
+    const w = Math.ceil(adv.reduce((a, b) => a + b, 0) + track * (chars.length - 1))
+    return { track, adv, asc, desc, w }
+  }
+  const s0 = size()
+  const { cv, g } = canvas(s0.w + pad * 2, s0.asc + s0.desc + pad * 2, true)
+  const W = cv.width
+  const H = cv.height
+  const mask = new Uint8Array(W * H)
+  const dist = new Uint16Array(W * H)
+  const tc = new THREE.Color(tube)
+  const cc = new THREE.Color(P.cream)
   const paint = () => {
-    g.clearRect(0, 0, cv.width, cv.height)
-    g.font = `700 ${px}px ${FONT_DISPLAY}`
-    g.textBaseline = 'middle'
-    g.lineJoin = 'round'
-    // a faint baked halo, then the tube itself in its own colour
-    g.globalAlpha = 0.28
-    g.strokeStyle = tube
-    g.lineWidth = 6
-    g.strokeText(text, pad, cv.height / 2)
-    g.globalAlpha = 1
-    g.fillStyle = tube
-    g.fillText(text, pad, cv.height / 2)
+    const s = size()
+    g.clearRect(0, 0, W, H)
+    g.font = font
+    g.textBaseline = 'alphabetic'
+    g.fillStyle = '#fff'
+    // centre the (possibly re-measured) line in the fixed canvas
+    let x = Math.round((W - s.w) / 2)
+    const y = Math.round((H - (s.asc + s.desc)) / 2 + s.asc)
+    chars.forEach((c, i) => {
+      g.fillText(c, x, y)
+      x += s.adv[i] + s.track
+    })
+    const img = g.getImageData(0, 0, W, H)
+    const d = img.data
+    for (let i = 0; i < W * H; i++) mask[i] = d[i * 4 + 3] > 110 ? 1 : 0
+    // city-block distance to the nearest empty texel (two chamfer passes; outside the canvas is empty)
+    for (let yy = 0; yy < H; yy++) {
+      for (let xx = 0; xx < W; xx++) {
+        const i = yy * W + xx
+        if (!mask[i]) dist[i] = 0
+        else dist[i] = Math.min(yy ? dist[i - W] + 1 : 1, xx ? dist[i - 1] + 1 : 1)
+      }
+    }
+    for (let yy = H - 1; yy >= 0; yy--) {
+      for (let xx = W - 1; xx >= 0; xx--) {
+        const i = yy * W + xx
+        if (!mask[i]) continue
+        dist[i] = Math.min(dist[i], yy < H - 1 ? dist[i + W] + 1 : 1, xx < W - 1 ? dist[i + 1] + 1 : 1)
+      }
+    }
+    for (let yy = 0; yy < H; yy++) {
+      for (let xx = 0; xx < W; xx++) {
+        const i = yy * W + xx
+        const o = i * 4
+        if (!mask[i]) {
+          d[o + 3] = 0
+          continue
+        }
+        const c = dist[i] >= 3 ? cc : tc
+        d[o] = Math.round(c.r * 255)
+        d[o + 1] = Math.round(c.g * 255)
+        d[o + 2] = Math.round(c.b * 255)
+        d[o + 3] = 255
+      }
+    }
+    g.putImageData(img, 0, 0)
   }
   paint()
-  return { tex: canvasTex(cv), paint, aspect: cv.width / cv.height }
+  return { tex: canvasTex(cv, { mip: true }), paint, aspect: W / H }
 }
 
-/** The Hark mark as a neon tube outline. */
+/** The Hark mark as a neon tube outline: tube colour with a cream core line, no halo. */
 export function drawNeonMark(tube: string) {
   const S = 96
   const { cv, g } = canvas(S, S)
   const outlines = logoOutlines(undefined, 90)
   const toPx = (v: THREE.Vector2) => [S / 2 + v.x * S * 0.8, S / 2 - v.y * S * 0.8] as const
   g.lineJoin = 'round'
-  for (const [w, c, al] of [
-    [6, tube, 0.28],
-    [3, tube, 1],
+  for (const [w, c] of [
+    [3.5, tube],
+    [1, P.cream],
   ] as const) {
-    g.globalAlpha = al
     g.strokeStyle = c
     g.lineWidth = w
     for (const line of outlines) {
@@ -468,8 +528,7 @@ export function drawNeonMark(tube: string) {
       g.stroke()
     }
   }
-  g.globalAlpha = 1
-  return canvasTex(cv)
+  return canvasTex(cv, { mip: true })
 }
 
 /** Soft radial spot (for floor light pools); white, alpha falls off. */

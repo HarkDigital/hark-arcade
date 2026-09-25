@@ -1,29 +1,29 @@
 import { BRAND, MICROCOPY } from '../content'
-import { CONCEPT_TAG, WORDMARK } from './mark'
 import { mountRotateGate } from './rotate'
 import { holdInert, releaseInert } from './inert'
 import { storedAudio } from './sound'
-import { ICON, MARK_TITLE, pixelMark } from './pixelart'
+import { MARK_TITLE, pixelMark } from './pixelart'
 
 /*
- * Boot screen: the console powers on.
+ * Boot screen: the console powers on, then hands over to the game.
  *
  *   BOOT   a black CRT. "HARK SYSTEM v2.6" and a few BIOS checks type out in
  *          VT323 (CPU, a memory count, video, sound, input … OK), then
  *          "LOADING LEVELS…" and a segmented pixel progress bar that fills
  *          with progress(). It never looks frozen: a stalled load keeps a
  *          slow creep and, after a while, says so.
- *   TITLE  on finish(): the screen clears, the Hark mark lands as big pixel
- *          art with a single chime-like white flash, the wordmark underneath
- *          and a blinking PRESS START. It does not wait for a press (any key,
- *          click or tap just hurries it along).
+ *   READY  on finish(): the bar lands on 100%, LOADING LEVELS reads OK and
+ *          "PLAYER 1 · GET READY" comes up under it. This is a hand-off, not
+ *          a second title screen: it never asks for a press (the site's own
+ *          title screen, the hero, is the one with PRESS START). Any key,
+ *          click or tap just hurries it along.
  *   EXIT   a pixel iris (a low-res canvas, 4px cells like the CRT pass)
- *          closes on the logo, then opens on the title screen of the site.
+ *          closes on the OEM mark, then opens on the title screen of the site.
  *
  * Minimum ~1.3s on screen, never hangs (every wait is a timer; a hidden tab
  * skips straight through). Everything behind it is inert while it is up.
- * Reduced motion: the text is simply there, no flash, no blinking, and the
- * exit is a plain crossfade.
+ * Reduced motion: the text is simply there, no blinking, and the exit is a
+ * plain crossfade.
  *
  * API: createLoader(root, { skip }) -> { progress(0..1), finish(): Promise<void> }
  * finish() resolves as the iris starts to open (so the chrome's reveal
@@ -88,20 +88,11 @@ export function createLoader(root: HTMLElement, { skip = false } = {}) {
           <p class="ld-load-t"><span class="ld-load-k">LOADING LEVELS</span><span class="ld-ell"><i>.</i><i>.</i><i>.</i></span><span class="ld-load-ok">OK</span></p>
           <div class="ld-bar"><span class="ld-segs">${'<i></i>'.repeat(SEGMENTS)}</span><span class="ld-pct">000%</span></div>
           <p class="ld-slow">STILL LOADING, NEARLY THERE</p>
+          <p class="ld-ready"><span class="ld-ready-k">${MICROCOPY.signalEyebrow.toUpperCase()}</span><span class="ld-ready-t">GET READY</span></p>
         </div>
       </div>
-      <span class="ld-oem">${pixelMark(30, { shade: true })}</span>
+      <span class="ld-oem">${pixelMark(30, MARK_TITLE)}</span>
       <p class="ld-foot"><span>${BRAND.short.toUpperCase()}</span><span class="ld-foot-t">${BRAND.tagline.toUpperCase()}</span></p>
-      <div class="ld-title">
-        <span class="ld-logo">${pixelMark(34, MARK_TITLE)}<span class="ld-sparks">${[0, 1, 2, 3]
-          .map(i => `<i style="--i:${i}">${ICON.star()}</i>`)
-          .join('')}</span></span>
-        <p class="ld-word">${WORDMARK}</p>
-        <p class="ld-tag">${CONCEPT_TAG}</p>
-        <p class="ld-start">Press start</p>
-        <p class="ld-copy">© ${new Date().getFullYear()} ${BRAND.name.toUpperCase()}</p>
-      </div>
-      <i class="ld-flash"></i>
     </div>
     <canvas class="ld-iris"></canvas>
   </div>`
@@ -113,8 +104,7 @@ export function createLoader(root: HTMLElement, { skip = false } = {}) {
   const loadEl = root.querySelector<HTMLElement>('.ld-load')!
   const segs = [...root.querySelectorAll<HTMLElement>('.ld-segs i')]
   const pctEl = root.querySelector<HTMLElement>('.ld-pct')!
-  const logo = root.querySelector<HTMLElement>('.ld-logo')!
-  const flash = root.querySelector<HTMLElement>('.ld-flash')!
+  const oem = root.querySelector<HTMLElement>('.ld-oem')!
   const iris = root.querySelector<HTMLCanvasElement>('.ld-iris')!
   const live = root.querySelector<HTMLElement>('[role="status"]')!
 
@@ -315,34 +305,13 @@ export function createLoader(root: HTMLElement, { skip = false } = {}) {
         wrap.dataset.phase = 'loaded'
         await wait(reduced ? 120 : 200)
 
-        // TITLE: like a console's boot splash, the mark drops in from the top
-        // of the glass, lands with a single chime-like flash, and PRESS START
-        // comes up underneath
-        wrap.dataset.phase = 'title'
-        live.textContent = `${BRAND.short}. ${MICROCOPY.signalEyebrow}, press start.`
-        const DROP = 480
-        if (!reduced && typeof logo.animate === 'function') {
-          logo.animate(
-            [
-              { transform: 'translate3d(0, -60vh, 0)', offset: 0 },
-              { transform: 'translate3d(0, 0, 0)', offset: 0.72 },
-              { transform: 'translate3d(0, -14px, 0)', offset: 0.86 },
-              { transform: 'translate3d(0, 0, 0)', offset: 1 },
-            ],
-            { duration: DROP, easing: 'steps(12, end)' },
-          )
-          flash.animate([{ opacity: 0 }, { opacity: 0.9 }, { opacity: 0.5 }, { opacity: 0.18 }, { opacity: 0 }], {
-            duration: 260,
-            delay: DROP * 0.72,
-            easing: 'steps(4, end)',
-            fill: 'both',
-          })
-          window.setTimeout(() => wrap.classList.add('is-landed'), DROP)
-        } else wrap.classList.add('is-landed')
+        // READY: the hand-off line (no PRESS START here: nothing waits for a press)
+        wrap.dataset.phase = 'ready'
+        live.textContent = `${BRAND.short} loaded. ${MICROCOPY.signalEyebrow}, get ready.`
         window.addEventListener('keydown', onHurry, true)
         window.addEventListener('pointerdown', onHurry, true)
         await new Promise<void>(r => {
-          const t = window.setTimeout(r, reduced ? 700 : DROP + 650)
+          const t = window.setTimeout(r, reduced ? 650 : 620)
           hurry = () => {
             clearTimeout(t)
             r()
@@ -370,8 +339,8 @@ export function createLoader(root: HTMLElement, { skip = false } = {}) {
           return
         }
 
-        // EXIT: the iris closes on the logo…
-        const r = logo.getBoundingClientRect()
+        // EXIT: the iris closes on the OEM mark…
+        const r = oem.getBoundingClientRect()
         const at = r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: innerWidth / 2, y: innerHeight / 2 }
         wrap.dataset.phase = 'iris'
         await irisTo(1, 0, 360, at)

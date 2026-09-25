@@ -29,6 +29,14 @@ function instanced(mesh: THREE.Mesh, count: number) {
 
 /* ------------------------------------------------------------ pixels */
 
+/** parsed palette colours (Color.set(string) runs a regex per call) */
+const SWATCH = new Map<string, THREE.Color>()
+function swatch(hex: string) {
+  let c = SWATCH.get(hex)
+  if (!c) SWATCH.set(hex, (c = new THREE.Color(hex)))
+  return c
+}
+
 export class Pixels {
   mesh: THREE.InstancedMesh
   private n = 0
@@ -53,8 +61,7 @@ export class Pixels {
     _q.identity()
     _m.compose(_p, _q, _s)
     this.mesh.setMatrixAt(this.n, _m)
-    if (typeof color === 'string') _c.set(color)
-    else _c.copy(color)
+    _c.copy(typeof color === 'string' ? swatch(color) : color)
     this.mesh.setColorAt(this.n, _c.multiplyScalar(k))
     this.n++
   }
@@ -366,10 +373,11 @@ export class Pops {
     im.setMatrixAt(this.n[f]++, _m)
   }
   end() {
-    this.meshes.forEach((im, f) => {
+    for (let f = 0; f < this.meshes.length; f++) {
+      const im = this.meshes[f]
       im.count = this.n[f]
       im.instanceMatrix.needsUpdate = true
-    })
+    }
   }
 }
 

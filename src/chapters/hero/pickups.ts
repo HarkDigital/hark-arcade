@@ -77,9 +77,10 @@ export class Pickups {
   private introIdx: number
 
   constructor(mobile: boolean) {
-    // coin trail: runs of five, collected between local ~0.24 and ~0.53
+    // coin trail: runs of five, collected between local ~0.24 and ~0.47
+    // (the flight hands over to the payoff swoop at ~0.49)
     const zA = markFlyZ(0.24)
-    const zB = markFlyZ(0.53)
+    const zB = markFlyZ(0.47)
     let z = zA
     let i = 0
     const gap = mobile ? 3.1 : 2.4
@@ -104,7 +105,7 @@ export class Pickups {
     const r = rng(77)
     const nGems = mobile ? 7 : 14
     const gA = markFlyZ(0.2)
-    const gB = markFlyZ(0.6)
+    const gB = markFlyZ(0.56)
     for (let k = 0; k < nGems; k++) {
       const side = k % 2 ? 1 : -1
       const gz = gA + ((gB - gA) * (k + r() * 0.6)) / nGems

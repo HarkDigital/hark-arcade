@@ -8,7 +8,7 @@ import { CHAPTERS } from '../index'
 import { P } from '../../kit/pixel'
 import { THEMES, fontsReady } from './art'
 import { HARK_SCALE, S, WALK_Z, buildHall, cabXOf, drawRadial, type Hall } from './hall'
-import { Critter } from './critter'
+import { Player1, type PoseOpts } from './critter'
 import { loadPic, whenIdle } from './pics'
 import './work.css'
 
@@ -17,21 +17,25 @@ import './work.css'
  *
  * A row of arcade cabinets at night, one per featured project, on cosmic
  * carpet under tall windows full of Philadelphia skyline and neon. Player 1
- * (a small green critter with big listening ears) walks the row, hopping for
- * coins; at each cabinet it stops to play: the CRT boots from its attract
- * screen into the client's website, the marquee lights chase, a few coins
- * spray out, and a game window opens with the project. The row ends at the
- * house machine, whose HIGH SCORES table lists the other nine sites (scroll
- * moves the menu cursor; the machine previews the selected one). LEVEL CLEAR.
+ * (kit/player1.ts: the kid in the green hoodie, hood up, headphones on) runs
+ * the row, hopping for coins; at each cabinet it stops to play: the CRT boots
+ * from its attract screen into the client's website, the marquee lights chase,
+ * a few coins spray out, Player 1 cheers and puts a hand to its headphones,
+ * and a game window opens with the project. The row ends at the house
+ * machine, a multi-game cabinet whose menu lists the other nine sites,
+ * numbered on from the six cabinets (scroll moves the menu cursor; the
+ * machine previews the selected one). LEVEL CLEAR.
  *
  *   0.000–0.035  READY! (iris opening)
  *   0.035–0.128  wide shot of the hall; "Built to be heard." window; P1 walks in
  *   0.100–0.835  six cabinets (~0.1225 each: walk 30%, then play + window)
- *   0.835–0.955  the high-score machine: table + "Say hello"
+ *   0.835–0.955  the multi-game machine: its menu + "Say hello"
  *   0.955–1.000  LEVEL CLEAR! coins burst, the iris closes
  *
- * Everything visible derives from `local`, except game-frame idle (bobs,
- * blinks, chase lights) and one-shot boot effects keyed to arriving.
+ * Everything visible derives from `local`, except one-shot effects keyed to
+ * arriving (boot, cheer, coin payout) and a few seconds of game-frame idle
+ * after it (chase lights, bob, INSERT COIN blink, neon flicker): all of those
+ * are finite and settle lit; after that the lights follow the scroll.
  */
 
 const FEATURED = WORK.filter(w => w.featured)
@@ -82,6 +86,13 @@ const COINS: { x: number; y: number; z: number }[] = [
     return { x, y: (roofY(k) + roofY(k + 1)) / 2 + JUMP_H + 0.42, z: ROOF_Z }
   }),
 ]
+/** game-frame idle (INSERT COIN blink, neon flicker, chase lights, bob) stops after this long (WCAG 2.2.2) */
+const IDLE_S = 4.8
+/** at most one white-flash onset per this many seconds (WCAG 2.3.1; the post chain has its own backstop) */
+const FLASH_GAP = 0.45
+/** the house machine: a multi-game cabinet holding the rest of the sites */
+const HOUSE_NAME = `${NR}-in-1`
+
 /** walking right, turned three-quarters toward us so the face reads */
 const WALK_YAW = Math.PI / 2 - 0.55
 const FACE_YAW = 0.32
@@ -128,7 +139,6 @@ const emLast = (s: string) => {
   return `${esc(parts.join(' '))} <em>${esc(last)}</em>`
 }
 const pad = (n: number) => String(n).padStart(2, '0')
-const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? 'ST' : n % 10 === 2 && n !== 12 ? 'ND' : n % 10 === 3 && n !== 13 ? 'RD' : 'TH'}`
 const WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve']
 const hash = (n: number) => {
   const s = Math.sin(n * 127.1 + 311.7) * 43758.5453
@@ -179,8 +189,11 @@ interface Layout {
   safe: Region
   dockR: number
   cardH: number[]
+  /** top edge of each window (CSS px, untransformed), for the portrait camera region */
+  cardTop: number[]
   scoresR: number
   scoresH: number
+  scoresTop: number
   introB: number
 }
 
@@ -215,7 +228,7 @@ class Work implements Chapter {
 
   private ctx!: ChapterContext
   private hall!: Hall
-  private critter!: Critter
+  private p1!: Player1
   private mobile = false
   private reduced = false
 
@@ -254,7 +267,20 @@ class Work implements Chapter {
   private clearOn = false
   private clearT0 = -10
   private pokeT0 = -10
-  private lastBulbKey = ''
+  /** when the level was last entered (game-frame idle runs for IDLE_S after this or a boot) */
+  private enterT = -10
+  private lastFrameT = -10
+  private lastBootStart = -10
+  private flashT0 = -10
+  private flashAmp = 0
+  private flashDur = 0.12
+  private bulbStep = -1
+  private bulbSlow = -1
+  private bulbCur = -2
+  private bulbMask = -1
+  private bulbReduced = false
+  private nCoin = 0
+  private nSpark = 0
   private lastLocal = 0
   private time = 0
 
@@ -274,6 +300,7 @@ class Work implements Chapter {
   private col = new THREE.Color()
   private ray = new THREE.Raycaster()
   private pl: PlayerState = { x: 0, y: 0, z: 0, walking: false, air: false, squash: 0 }
+  private poseOpts: PoseOpts = { step: -1, air: false, squash: 0, yaw: 0, perk: 0, cheer: 0, idle: 0, wiggle: 0 }
 
   async init(ctx: ChapterContext) {
     this.ctx = ctx
@@ -282,14 +309,14 @@ class Work implements Chapter {
     this.buildDom(ctx.stage)
     await nextFrame()
 
-    const names = [...FEATURED.map(w => w.name), 'High Scores']
+    const names = [...FEATURED.map(w => w.name), HOUSE_NAME]
     this.hall = await buildHall(names, this.mobile, nextFrame)
     this.group.add(this.hall.root)
     this.boot = this.hall.cabs.map(() => 0)
     this.bootT0 = this.hall.cabs.map(() => -10)
     const radial = drawRadial()
-    this.critter = new Critter(radial)
-    this.group.add(this.critter.group, this.critter.shadow)
+    this.p1 = new Player1(radial)
+    this.group.add(this.p1.group, this.p1.shadow)
     await nextFrame()
 
     fontsReady().then(() => {
@@ -415,17 +442,17 @@ class Work implements Chapter {
     const [a, b] = SECTIONS.work.title.split(/ (?=\S+$)/)
     this.introTitle = rise(el('h2', 'hud-title wk-intro-title', undefined, this.intro), `${esc(a)} <em>${esc(b)}</em>`)
     const meta = el('p', 'wk-intro-meta', undefined, this.intro)
-    meta.innerHTML = `<span class="hud-label">${WORK.length} sites</span><span class="hud-label">${NF} cabinets</span><span class="hud-label">1 high-score table</span>`
+    meta.innerHTML = `<span class="hud-label">${WORK.length} sites</span><span class="hud-label">${NF} cabinets</span><span class="hud-label">${NR} more games</span>`
 
     // one game window per cabinet, docked left (bottom on portrait)
     this.dock = el('div', 'wk-dock', undefined, stage)
     FEATURED.forEach((w, k) => this.cards.push(this.buildCard(this.dock, w, k)))
 
-    // high-score table
+    // the multi-game machine's menu: the other sites, numbered on from the cabinets (no ranking)
     this.scoresDock = el('div', 'wk-dock wk-dock--scores', undefined, stage)
     this.scores = el('section', 'wk-scores wk-win hud-panel', undefined, this.scoresDock)
     const st = el('div', 'wk-tab', undefined, this.scores)
-    el('p', 'hud-eyebrow', 'High scores', st)
+    el('p', 'hud-eyebrow', 'More games', st)
     const allLive = REST.every(w => !isPreview(w.url))
     const count = WORDS[NR] ?? String(NR)
     this.scoresTitle = rise(
@@ -433,8 +460,8 @@ class Work implements Chapter {
       allLive ? `${count} more, <em>all live.</em>` : `${count} <em>more.</em>`,
     )
     const head = el('div', 'wk-thead', undefined, this.scores)
-    head.innerHTML = '<span>Rank</span><span>Name</span><span class="wk-th-ind">Industry</span>'
-    const list = el('ol', 'wk-rows', undefined, this.scores)
+    head.innerHTML = '<span>No.</span><span>Name</span><span class="wk-th-ind">Industry</span>'
+    const list = el('ul', 'wk-rows', undefined, this.scores)
     const rowCols = ['var(--cyan)', 'var(--gold)', 'var(--coral)', 'var(--signal)', '#ff9b3d', 'var(--cream)']
     REST.forEach((w, j) => {
       const li = el('li', '', undefined, list)
@@ -444,7 +471,7 @@ class Work implements Chapter {
       link.rel = 'noopener'
       link.style.setProperty('--c', rowCols[j % rowCols.length])
       const pre = isPreview(w.url)
-      link.innerHTML = `<span class="wk-rank">${ordinal(j + 1)}</span><span class="wk-rname">${esc(w.name)}${
+      link.innerHTML = `<span class="wk-no">${pad(NF + j + 1)}</span><span class="wk-rname">${esc(w.name)}${
         pre ? ' <small>(Preview)</small>' : ''
       }</span><span class="wk-rind">${esc(w.industry)}</span><span class="wk-arrow" aria-hidden="true">↗</span>`
       link.addEventListener('pointerenter', () => (this.hoverRow = j))
@@ -524,8 +551,10 @@ class Work implements Chapter {
       safe,
       dockR: d.width > 0 ? d.right : W * 0.4,
       cardH: this.cards.map(c => c.root.offsetHeight || 320),
+      cardTop: this.cards.map(c => (d.height > 0 ? d.top + c.root.offsetTop : H - 90 - (c.root.offsetHeight || 320))),
       scoresR: sd.width > 0 ? sd.right : W * 0.45,
       scoresH: this.scores.offsetHeight || 480,
+      scoresTop: sd.height > 0 ? sd.top + this.scores.offsetTop : H - 90 - (this.scores.offsetHeight || 480),
       introB: this.intro.offsetTop + this.intro.offsetHeight || H * 0.4,
     }
     return this.lay
@@ -540,8 +569,9 @@ class Work implements Chapter {
       return { x0: s.x0 + L.W * 0.06, x1: s.x1 + 10, y0: Math.min(L.introB - L.H * 0.06, L.H * 0.42), y1: s.y1 + 30 }
     }
     if (L.portrait) {
-      const below = kind === 'card' ? L.cardH[k] : L.scoresH
-      const y1 = Math.max(s.y0 + L.H * 0.16, s.y1 - below - 14)
+      // frame the machine in the strip above the window (its tab notch pokes up ~16px)
+      const top = kind === 'card' ? L.cardTop[k] : L.scoresTop
+      const y1 = Math.max(s.y0 + 56, top - 22)
       return { x0: s.x0 - 8, x1: s.x1 + 8, y0: s.y0 + 4, y1 }
     }
     const right = kind === 'card' ? L.dockR : L.scoresR
@@ -679,11 +709,13 @@ class Work implements Chapter {
     this.time = time
     const dt = Math.min(frame.dt, 0.05)
     const reduced = this.reduced || frame.reducedMotion
-    const L = this.ensureLayout(frame)
-    void L
+    this.ensureLayout(frame)
     const ph = phaseOf(l)
     const hall = this.hall
     const cabs = hall.cabs
+    // (re)entering the level restarts the few seconds of game-frame idle
+    if (time - this.lastFrameT > 0.5) this.enterT = time
+    this.lastFrameT = time
 
     // ---- world + CRT look
     const wp = ctx.world.params
@@ -696,18 +728,29 @@ class Work implements Chapter {
 
     // ---- which cabinet is being played
     const cur = ph.kind === 'dwell' ? ph.k : ph.kind === 'clear' ? NF : -1
-    const curBootT = cur >= 0 ? time - this.bootT0[cur] : 99
 
     // ---- boots: targets come from scroll; the cabinet being played animates, the rest snap
     for (let k = 0; k < cabs.length; k++) {
       const target = l >= arrive(k) ? 1 : 0
       if (k === cur) {
-        if (target === 1 && this.boot[k] === 0 && this.bootT0[k] < time - 0.05) this.bootT0[k] = time
+        if (target === 1 && this.boot[k] === 0 && this.bootT0[k] < time - 0.05) {
+          // a boot opens its screen through a bright line: at most one per FLASH_GAP
+          // (a fast scroll past several cabinets snaps the later ones on)
+          if (!reduced && time - this.lastBootStart < FLASH_GAP) this.boot[k] = 1
+          else {
+            this.bootT0[k] = time
+            this.lastBootStart = time
+            if (!reduced) this.startFlash(time, 0.1, 0.12)
+          }
+        }
         const rate = target > this.boot[k] ? 1 / 0.85 : 1 / 0.35
         this.boot[k] = target > this.boot[k] ? Math.min(target, this.boot[k] + dt * rate) : Math.max(target, this.boot[k] - dt * rate)
         if (reduced && target === 1) this.boot[k] = Math.max(this.boot[k], Math.min(1, this.boot[k] + dt * 2))
       } else this.boot[k] = target
     }
+    const curBootT = cur >= 0 ? time - this.bootT0[cur] : 99
+    // game-frame idle (chase, blink, flicker, bob) runs for IDLE_S after entering or a boot, then settles lit
+    const idleOn = !reduced && (time - this.enterT < IDLE_S || curBootT < IDLE_S)
 
     // ---- screens
     const sel = this.hoverRow >= 0 ? this.hoverRow : clamp(Math.floor(((l - ROW0) / (ROW1 - ROW0)) * NR), 0, NR - 1)
@@ -716,7 +759,7 @@ class Work implements Chapter {
       const b = this.boot[k]
       u.uBoot.value = reduced ? (b > 0.5 ? 1 : 0) : Math.floor(b * 16) / 16
       u.uTime.value = time
-      u.uBlink.value = reduced ? 0 : 1
+      u.uBlink.value = idleOn ? 1 : 0
       const focus = k === cur
       u.uBright.value = b <= 0 ? 0.78 : focus ? 0.94 : 0.62
       if (k < NF) {
@@ -731,27 +774,35 @@ class Work implements Chapter {
         u.uFlip.value = this.restFlip[sel]
       }
     }
-    // channel switch on the high-score machine
+    // channel switch on the multi-game machine (a burst of snow, at most ~3 a second)
     if (sel !== this.shownRow) {
-      if (this.shownRow !== -2 && cur === NF) this.staticT0 = time
+      if (this.shownRow !== -2 && cur === NF && time - this.staticT0 > 0.34) this.staticT0 = time
       this.shownRow = sel
     }
     const stat = reduced ? 0 : clamp(1 - (time - this.staticT0) / 0.22)
     cabs[NF].uniforms.uStatic.value = stat * 0.85
 
-    // ---- marquee chase lights (game frames)
-    const step = Math.floor(time * 12)
-    const slow = Math.floor(time * 1.5)
-    const bulbKey = `${step}|${slow}|${cur}|${this.boot.map(b => (b > 0.5 ? 1 : 0)).join('')}|${reduced}`
-    if (bulbKey !== this.lastBulbKey) {
-      this.lastBulbKey = bulbKey
+    // ---- marquee chase lights: game frames while idle runs, then they follow the scroll
+    const step = idleOn ? Math.floor(time * 12) : Math.floor(l * 700)
+    const slow = idleOn ? Math.floor(time * 1.5) : Math.floor(l * 90)
+    let mask = 0
+    for (let k = 0; k < cabs.length; k++) if (this.boot[k] > 0.5) mask |= 1 << k
+    if (step !== this.bulbStep || slow !== this.bulbSlow || cur !== this.bulbCur || mask !== this.bulbMask || reduced !== this.bulbReduced) {
+      this.bulbStep = step
+      this.bulbSlow = slow
+      this.bulbCur = cur
+      this.bulbMask = mask
+      this.bulbReduced = reduced
       const per = hall.bulbsPerCab
       for (let k = 0; k < cabs.length; k++) {
         const on = this.boot[k] > 0.5
         for (let i = 0; i < per; i++) {
           let v: number
           if (reduced) v = on ? 1.3 : i % 2 ? 0.9 : 0.4
-          else if (k === cur && on) v = (i - step + per * 100) % 4 === 0 ? 1.75 : (i - step + per * 100) % 4 === 1 ? 1.05 : 0.45
+          else if (k === cur && on) {
+            const ph4 = (((i - step) % 4) + 4) % 4
+            v = ph4 === 0 ? 1.75 : ph4 === 1 ? 1.05 : 0.45
+          }
           else if (on) v = (i + slow) % 2 ? 1.25 : 0.7
           else v = (i + slow) % 2 ? 0.9 : 0.35
           const c = v > 1.0 ? P.gold : v > 0.6 ? P.orange : P.brown
@@ -772,90 +823,83 @@ class Work implements Chapter {
     }
     if (hall.pools.instanceColor) hall.pools.instanceColor.needsUpdate = true
 
-    // ---- neon flicker (rare, single game-frames)
+    // ---- neon flicker (rare single game-frames, only while idle runs)
     for (let i = 0; i < hall.signs.length; i++) {
       const s = hall.signs[i]
       const mat = s.mesh.material as THREE.MeshBasicMaterial
-      const off = !reduced && s.flicker && hash(Math.floor(time * 12) + i * 91.3) > 0.975
+      const off = idleOn && s.flicker && hash(Math.floor(time * 12) + i * 91.3) > 0.975
       mat.color.setScalar(off ? s.base * 0.3 : s.base)
     }
 
     // ---- Player 1
     const pl = this.player(l, this.pl)
-    const cx = { x: pl.x }
     let hop = 0
     let yaw = WALK_YAW
     let perk = 0
+    let cheer = 0
     let wiggle = 0
     if (ph.kind === 'dwell') {
-      // stop, turn to us on two sprite frames; the ears perk up as the machine boots
+      // stop, turn to us on two sprite frames; cheer as the machine boots, then a hand to the headphones
       const turn = clamp(ph.t / 0.06)
       yaw = WALK_YAW + (FACE_YAW - WALK_YAW) * (Math.floor(turn * 2.999) / 2)
       perk = clamp(this.boot[ph.k] * 1.4)
       const w = time - this.bootT0[ph.k]
       if (!reduced && w > 0 && w < 0.9) wiggle = Math.sin(w * 34) * 0.16 * (1 - w / 0.9)
       if (!reduced && w > 0.05 && w < 0.45) hop = Math.sin(((w - 0.05) / 0.4) * Math.PI) * 0.32
+      if (!reduced && w > 0 && w < 0.62) cheer = 1
     } else if (ph.kind === 'clear') {
       yaw = FACE_YAW + 0.25
       perk = 1
       const u = clamp((ph.t - 0.08) / 0.84)
       hop = Math.abs(Math.sin(u * Math.PI * 2)) * 0.7 * (u > 0 && u < 1 ? 1 : 0)
+      cheer = u > 0 && u < 1 ? 1 : 0
     }
-    // poke: click Player 1 to make it hop
+    // poke: click Player 1 to make it hop and cheer
     const pk = time - this.pokeT0
     if (pk >= 0 && pk < 0.5) {
       hop = Math.max(hop, Math.sin((pk / 0.5) * Math.PI) * 0.5)
       wiggle += Math.sin(pk * 40) * 0.2 * (1 - pk / 0.5)
+      cheer = 1
     }
     const walkStep = pl.walking ? Math.floor((pl.x - START_X) / 0.15) : -1
     // the floor (or roof) under Player 1, for its shadow
     let ground = 0
     for (let k = 0; k <= NF; k++) if (Math.abs(pl.x - cabX(k)) < 0.72 * csc(k) && pl.z < 0.3) ground = roofY(k)
-    this.critter.pose(pl.x, pl.y + hop, pl.z, ground, {
-      step: walkStep,
-      air: pl.air,
-      squash: reduced ? 0 : pl.squash,
-      yaw,
-      perk,
-      idle: reduced ? 0 : ph.kind === 'dwell' ? Math.floor(time * 4) : 0,
-      wiggle,
-    })
+    const po = this.poseOpts
+    po.step = walkStep
+    po.air = pl.air
+    po.squash = reduced ? 0 : pl.squash
+    po.yaw = yaw
+    po.perk = perk
+    po.cheer = cheer
+    po.idle = idleOn && ph.kind === 'dwell' ? Math.floor(time * 4) : 0
+    po.wiggle = wiggle
+    this.p1.pose(pl.x, pl.y + hop, pl.z, ground, po)
 
     // ---- coins + sparkles
-    let nc = 0
-    let ns = 0
+    this.nCoin = 0
+    this.nSpark = 0
     const coins = hall.coins
     const sparks = hall.sparks
     const spinStep = reduced ? 0 : Math.floor(time * 10)
-    const putCoin = (x: number, y: number, z: number, rotY: number, s: number) => {
-      if (nc >= coins.instanceMatrix.count || s <= 0.001) return
-      this.e.set(0, rotY, 0)
-      this.q.setFromEuler(this.e)
-      this.m4.compose(this.v.set(x, y, z), this.q, this.sc.setScalar(s))
-      coins.setMatrixAt(nc++, this.m4)
-    }
-    const putSpark = (x: number, y: number, z: number, s: number) => {
-      if (ns >= sparks.instanceMatrix.count || s <= 0.001) return
-      this.m4.compose(this.v.set(x, y, z), this.q.identity(), this.sc.setScalar(s))
-      sparks.setMatrixAt(ns++, this.m4)
-    }
-    COINS.forEach((c, j) => {
-      const got = cx.x >= c.x - 0.04
+    for (let j = 0; j < COINS.length; j++) {
+      const c = COINS[j]
+      const got = pl.x >= c.x - 0.04
       const bob = reduced ? 0 : Math.floor(Math.sin(time * 3 + j) * 3) * 0.02
-      if (!got) putCoin(c.x, c.y + bob, c.z, (spinStep + j * 3) * (Math.PI / 5), 1)
+      if (!got) this.putCoin(c.x, c.y + bob, c.z, (spinStep + j * 3) * (Math.PI / 5), 1)
       else {
-        const q = clamp((cx.x - c.x) / 0.9)
+        const q = clamp((pl.x - c.x) / 0.9)
         if (q < 1) {
           for (let i = 0; i < 4; i++) {
             const a = Math.PI / 4 + (i * Math.PI) / 2
             const r = 0.12 + q * 0.55
-            putSpark(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, c.z, 1 - q)
+            this.putSpark(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, c.z, 1 - q)
           }
           // the coin itself zips up and pops
-          putCoin(c.x, c.y + q * 0.9, c.z, spinStep * 1.6, 1 - q * q)
+          this.putCoin(c.x, c.y + q * 0.9, c.z, spinStep * 1.6, 1 - q * q)
         }
       }
-    })
+    }
     // payout: a few coins spray out when a cabinet boots
     if (!reduced && cur >= 0 && cur < cabs.length && curBootT >= 0 && curBootT < 1.1) {
       const c = cabs[cur]
@@ -868,10 +912,10 @@ class Work implements Chapter {
         const py = c.top.y + (3.0 + (i % 2) * 0.6) * t - 4.9 * t * t
         const pz = c.top.z + 1.0 * t
         if (py < 0.05) continue
-        putCoin(px, py, pz, (spinStep + i * 2) * (Math.PI / 5), Math.min(1, t / 0.06) * 0.85)
+        this.putCoin(px, py, pz, (spinStep + i * 2) * (Math.PI / 5), Math.min(1, t / 0.06) * 0.85)
       }
     }
-    // LEVEL CLEAR: a fountain of coins from the high-score machine (scroll-derived)
+    // LEVEL CLEAR: a fountain of coins from the house machine (scroll-derived)
     if (ph.kind === 'clear') {
       const c = cabs[NF]
       const n = this.mobile ? 10 : 16
@@ -883,13 +927,24 @@ class Work implements Chapter {
         const vy = 3.0 + Math.sin(a) * 1.1
         const py = c.screenCenter.y + vy * t - 4.9 * t * t
         if (py < 0.05) continue
-        putCoin(c.screenCenter.x + vx * t, py, c.screenCenter.z + 0.3 + 1.6 * t, (spinStep + i) * (Math.PI / 5), Math.min(1, t / 0.05))
+        this.putCoin(c.screenCenter.x + vx * t, py, c.screenCenter.z + 0.3 + 1.6 * t, (spinStep + i) * (Math.PI / 5), Math.min(1, t / 0.05))
       }
     }
-    coins.count = nc
+    coins.count = this.nCoin
     coins.instanceMatrix.needsUpdate = true
-    sparks.count = ns
+    sparks.count = this.nSpark
     sparks.instanceMatrix.needsUpdate = true
+
+    // ---- LEVEL CLEAR (its flash shares the rate limit with the boots)
+    const clearOn = l >= CLEAR + 0.004
+    if (clearOn !== this.clearOn) {
+      this.clearOn = clearOn
+      this.clearEl.classList.toggle('is-on', clearOn)
+      if (clearOn) {
+        this.clearT0 = time
+        if (!reduced) this.startFlash(time, 0.22, 0.14)
+      }
+    }
 
     // ---- post
     const pp = ctx.post.params
@@ -903,24 +958,48 @@ class Work implements Chapter {
     pp.palette = showingSite ? 0.8 : 1
     pp.dither = showingSite ? 0.45 : 0.55
     if (!reduced) {
-      if (cur >= 0 && curBootT >= 0 && curBootT < 0.12) pp.flash = 0.1 * (1 - curBootT / 0.12)
+      const ft = time - this.flashT0
+      if (ft >= 0 && ft < this.flashDur) pp.flash = Math.max(pp.flash, this.flashAmp * (1 - ft / this.flashDur))
       if (cur === NF) pp.glitch = stat * 0.25
-      const ct = time - this.clearT0
-      if (this.clearOn && ct >= 0 && ct < 0.14) pp.flash = Math.max(pp.flash, 0.22 * (1 - ct / 0.14))
     }
 
     // ---- DOM
-    this.updateDom(l, ph, time, reduced, sel)
+    this.updateDom(l, reduced, sel)
   }
 
-  private updateDom(l: number, ph: Phase, time: number, reduced: boolean, sel: number) {
+  /** Start a white flash unless one began within FLASH_GAP. */
+  private startFlash(time: number, amp: number, dur: number) {
+    if (time - this.flashT0 < FLASH_GAP) return
+    this.flashT0 = time
+    this.flashAmp = amp
+    this.flashDur = dur
+  }
+
+  private putCoin(x: number, y: number, z: number, rotY: number, s: number) {
+    const coins = this.hall.coins
+    if (this.nCoin >= coins.instanceMatrix.count || s <= 0.001) return
+    this.e.set(0, rotY, 0)
+    this.q.setFromEuler(this.e)
+    this.m4.compose(this.v.set(x, y, z), this.q, this.sc.setScalar(s))
+    coins.setMatrixAt(this.nCoin++, this.m4)
+  }
+
+  private putSpark(x: number, y: number, z: number, s: number) {
+    const sparks = this.hall.sparks
+    if (this.nSpark >= sparks.instanceMatrix.count || s <= 0.001) return
+    this.m4.compose(this.v.set(x, y, z), this.q.identity(), this.sc.setScalar(s))
+    sparks.setMatrixAt(this.nSpark++, this.m4)
+  }
+
+  private updateDom(l: number, reduced: boolean, sel: number) {
     this.ready.classList.toggle('is-on', l < WALK0)
     const introOn = l >= 0.03 && l < 0.128
     this.intro.classList.toggle('is-on', introOn)
     setRise(this.introTitle, introOn)
 
     const now = performance.now()
-    this.cards.forEach((c, k) => {
+    for (let k = 0; k < this.cards.length; k++) {
+      const c = this.cards[k]
       const on = l >= arrive(k) + 0.006 && l < segEnd(k) - 0.003
       if (on !== c.on) {
         c.on = on
@@ -941,7 +1020,7 @@ class Work implements Chapter {
           c.root.classList.toggle('is-typed', n >= c.text.length)
         }
       }
-    })
+    }
 
     const scoresOn = l >= H_ARRIVE + 0.003 && l < CLEAR - 0.002
     this.scores.classList.toggle('is-on', scoresOn)
@@ -951,14 +1030,6 @@ class Work implements Chapter {
       this.rows[sel]?.classList.add('is-sel')
       this.selRow = sel
     }
-
-    const clearOn = l >= CLEAR + 0.004
-    if (clearOn !== this.clearOn) {
-      this.clearOn = clearOn
-      this.clearEl.classList.toggle('is-on', clearOn)
-      if (clearOn) this.clearT0 = time
-    }
-    void ph
   }
 
   camera(local: number, frame: Frame, out: CameraPose) {
@@ -990,7 +1061,7 @@ class Work implements Chapter {
 
   onPointerDown(frame: Frame, ctx: ChapterContext) {
     this.ray.setFromCamera(frame.pointerRaw, ctx.camera)
-    if (this.ray.intersectObject(this.critter.hit, false).length) this.pokeT0 = this.time
+    if (this.ray.intersectObject(this.p1.hit, false).length) this.pokeT0 = this.time
   }
 
   onLeave() {

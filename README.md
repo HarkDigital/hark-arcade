@@ -21,9 +21,9 @@ Copy, services, portfolio and testimonials come from the 2026 site
 | # | Level | What happens |
 |---|-------|--------------|
 | 01 | **Title Screen** (`hero`) | Attract mode: the Hark mark as the game logo over a neon grid horizon — *Make the internet listen.* — PRESS START |
-| 02 | **Arcade Hall** (`work`) | *Built to be heard.* Each project runs on an arcade cabinet's screen; the nine more on a high-score table |
+| 02 | **Arcade Hall** (`work`) | *Built to be heard.* Each project runs on an arcade cabinet's screen; the nine more on the 9-in-1 house machine's menu |
 | 03 | **Power-Ups** (`services`) | *Eleven ways to be heard.* ?-blocks pop out one power-up item per service |
-| 04 | **Town Chatter** (`voices`) | *We listen. They talk.* Villagers share the testimonials in RPG dialogue boxes |
+| 04 | **Side Quests** (`voices`) | *We listen. They talk.* Villagers share the testimonials in RPG dialogue boxes |
 | 05 | **Boss Fight** (`shield`) | A malware boss attacks, the Hark shield holds → *Hacked? Breathe.* → RESTORED, 24/7 |
 | 06 | **World Map** (`process`) | *We listen first. Then we build.* Four levels to clear: Listen · Prototype · Build · Support, then a results screen |
 | 07 | **Continue?** (`contact`) | The countdown turns into *Say hello.*; credits roll — thanks for playing |

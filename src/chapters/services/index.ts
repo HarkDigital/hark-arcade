@@ -3,7 +3,7 @@ import type { CameraPose, Chapter, ChapterContext, Frame } from '../../core/type
 import { clamp, ease, lerp, smoothstep } from '../../core/math'
 import { nextFrame } from '../../core/yield'
 import { P } from '../../kit/pixel'
-import { Hud } from './hud'
+import { Hud, type HudState } from './hud'
 import { BURST, SPARKS, buildLevel, driftClouds, type Level } from './scene'
 import {
   ANCHORS,
@@ -48,9 +48,26 @@ const HERO_H = 19 * HERO_VOXEL
 const JUMP_H = BLOCK_Y - BLOCK_SIZE / 2 - HERO_H
 const FOV = 30
 const PITCH = 0.075
-const CARD_OFF = 0.9
+/** the WordPress card holds until POWER UP! takes over: no blank beat between */
+const CARD_OFF = POWER_AT
+/**
+ * run progress (fraction of a beat) at which the last item has slid out of
+ * view (behind the card on wide layouts, off the left edge on tall ones): the
+ * card stops naming it and turns to NEXT ▶ ? BLOCK 0k until the bonk
+ */
+const NEXT_AT = 0.6 * RUN
 /** how high the player floats at the power-up */
 const LIFT = 1.25
+/*
+ * Every blink here is finite and ends lit (WCAG 2.2.2): the ?-glyph shimmer
+ * rests on white once the scroll has been still this long; the twinkles round
+ * a new item and round the powered-up player settle on after a few blinks.
+ */
+const SHIMMER_FOR = 4
+const TWINKLE_FOR = 2.5
+const POWER_TWINKLE_FOR = 3.5
+/** hit-flashes at most one per this many seconds (WCAG 2.3.1) */
+const FLASH_GAP = 0.5
 
 const stepT = (t: number, fps: number) => Math.floor(t * fps) / fps
 const hash = (n: number) => {
@@ -97,7 +114,13 @@ export default function create(): Chapter {
   let lastFlash = -99
   let bonkFlash = false
   let powerT0 = -99
+  let powerFlash = false
   let wasPower = false
+  // when the scroll last moved, the featured item changed, POWER UP! began
+  let movedT = -99
+  let featured = -2
+  let featuredT0 = -99
+  let powerOnT = -99
   // cosmetic sprite state: is the player moving, and which way is he facing
   let prevX = START_X
   let speed = 0
@@ -117,6 +140,7 @@ export default function create(): Chapter {
   const rectB: Rect = { x0: 0, x1: 0, y0: 0, y1: 0 }
   const reg: Region = { l: -1, r: 1, b: -1, t: 1 }
   const regB: Region = { l: -1, r: 1, b: -1, t: 1 }
+  const hs: HudState = { ready: false, intro: false, shown: -1, next: -1, got: 0, power: false }
 
   const jumpTo = (k: number) => {
     const eng = window.__hark?.engine
@@ -138,8 +162,9 @@ export default function create(): Chapter {
     out.r = nx(W - m.gutter)
     if (kind === 'safe') return
     if (kind === 'full') {
-      // leave the top of the safe area for the POWER UP! title
-      out.t = ny(m.safeTop + Math.min(170, H * 0.2))
+      // leave the top of the safe area for the POWER UP! title (and never
+      // less than the banner itself: short landscape has little to spare)
+      out.t = ny(Math.max(m.safeTop + Math.min(170, H * 0.2), m.powerBottom + 10))
       return
     }
     if (m.tall) out.b = ny(Math.max(m.safeTop + 140, box.top - 8))
@@ -235,14 +260,20 @@ export default function create(): Chapter {
 
       // live crossings → flourishes
       const live = lastLocal >= 0 && Math.abs(local - lastLocal) < BEAT * 2.5
+      if (local !== lastLocal) movedT = time
       if (bonked > lastBonked && lastBonked >= 0 && live && bonked > 0) {
         bonkK = bonked - 1
         bonkT0 = time
         // hit-flash at most ~2 a second, however fast the scroll
-        bonkFlash = time - lastFlash > 0.5
+        bonkFlash = time - lastFlash > FLASH_GAP
         if (bonkFlash) lastFlash = time
       } else if (!live || (bonked < lastBonked && bonkK >= bonked)) bonkK = -1
-      if (power && !wasPower && live) powerT0 = time
+      if (power && !wasPower && live) {
+        powerT0 = time
+        powerFlash = time - lastFlash > FLASH_GAP
+        if (powerFlash) lastFlash = time
+      }
+      if (power !== wasPower) powerOnT = time
       wasPower = power
       lastBonked = bonked
       lastLocal = local
@@ -293,7 +324,7 @@ export default function create(): Chapter {
       L.shadow.scale.setScalar(sh)
 
       /* ---------------- blocks ---------------- */
-      const shimmer = calm ? 0 : Math.floor(time * 5) % 4
+      const shimmer = calm || time - movedT > SHIMMER_FOR ? 0 : Math.floor(time * 5) % 4
       for (let j = 0; j < N; j++) {
         const b = L.blocks[j]
         const used = j < bonked
@@ -313,7 +344,13 @@ export default function create(): Chapter {
       }
 
       /* ---------------- power-ups ---------------- */
+      // the featured item (bigger, haloed) is the last one collected; it keeps
+      // that look until it leaves, even once the card has moved on to NEXT
       const shown = local < CARD_OFF ? bonked - 1 : -1
+      if (shown !== featured) {
+        featured = shown
+        featuredT0 = time
+      }
       const ts = stepT(t, 12)
       const orbitSpin = calm ? 0 : t * 0.9
       const shrink = 1 - 0.28 * smoothstep(0.955, 1, local)
@@ -410,7 +447,7 @@ export default function create(): Chapter {
       if (shown >= 0 && local < SVC_END && !calm) {
         for (let i = 0; i < 4; i++) {
           const a = stepT(t, 8) * 1.6 + (i / 4) * Math.PI * 2
-          const blink = Math.floor(t * 6 + i * 1.5) % 3 === 0 ? 0 : 1
+          const blink = time - featuredT0 < TWINKLE_FOR && Math.floor(t * 6 + i * 1.5) % 3 === 0 ? 0 : 1
           spark(blockX(shown) + Math.cos(a) * 1.05, ITEM_Y + Math.sin(a) * 0.95, 0.3, blink * (i % 2 ? 0.7 : 1))
         }
       }
@@ -435,7 +472,7 @@ export default function create(): Chapter {
         for (let i = 0; i < 4; i++) {
           const a = -stepT(t, 10) * 2.2 + (i / 4) * Math.PI * 2 + 0.4
           const rr = 1.5
-          const blink = Math.floor(t * 4 + i) % 3 === 0 ? 0 : 1
+          const blink = time - powerOnT < POWER_TWINKLE_FOR && Math.floor(t * 4 + i) % 3 === 0 ? 0 : 1
           spark(hx + Math.cos(a) * rr, hy + HERO_H * 0.5 + Math.sin(a) * rr, 0.8, blink * 0.75)
         }
       }
@@ -479,7 +516,11 @@ export default function create(): Chapter {
         region(regB, frame, 'full')
         const f = ease.inOutCubic(fin)
         lerpRect(rect, rectB, f)
-        lerpReg(reg, regB, f)
+        // tall layouts park the scene above the card, so the scene may only
+        // spread into the card's room once the card has gone, and must do so
+        // at once (a slow blend leaves the bottom half of the screen as dirt):
+        // a quick push-in on the POWER UP! beat, ~12 px of scroll on a phone
+        lerpReg(reg, regB, tall ? smoothstep(CARD_OFF, CARD_OFF + 0.004, local) : f)
         centre = f
         // as the iris closes, bring the powered-up player to screen centre
         const c = smoothstep(0.948, 0.985, local)
@@ -533,21 +574,22 @@ export default function create(): Chapter {
         // hit-flash: a quick white pop, never more than ~2 a second
         const ft = bonkK >= 0 && bonkFlash ? tb - T_HIT : 99
         if (ft >= 0 && ft < 0.08) pp.flash = 0.16 * (1 - ft / 0.08)
-        const pt = time - powerT0
+        const pt = powerFlash ? time - powerT0 : 99
         if (pt >= 0 && pt < 0.14) pp.flash = Math.max(pp.flash, 0.3 * (1 - pt / 0.14))
       }
 
       /* ---------------- HUD ---------------- */
-      hud.update(
-        {
-          ready: local < 0.034,
-          intro: local >= 0.034 && local < INTRO_END + 0.02,
-          shown,
-          got: local >= CARD_OFF ? N : bonked,
-          power,
-        },
-        time,
-      )
+      // the card: the item just collected, then NEXT ▶ once it is out of view
+      // (and between the intro window and the first bonk)
+      const running = local >= INTRO_END + 0.02 && local < SVC_END && p < RUN
+      const next = running && (k === 0 || p >= NEXT_AT) ? k : -1
+      hs.ready = local < 0.034
+      hs.intro = local >= 0.034 && local < INTRO_END + 0.02
+      hs.shown = next >= 0 ? -1 : shown
+      hs.next = next
+      hs.got = local >= CARD_OFF ? N : bonked
+      hs.power = power
+      hud.update(hs, time)
       if (local < 0.05) {
         // READY? floats over the player
         proj.set(hx, HERO_H + 0.9, 0)

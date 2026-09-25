@@ -264,6 +264,13 @@ export function blockAtlas(kind: BlockKind, glyph = P.white) {
   return pixelTexture(cv)
 }
 
+/** the ?-block's front face as a 16×16 data URL (the NEXT ▶ card's icon) */
+export function qBlockDataUrl() {
+  const { cv, ctx } = canvas(16, 16)
+  blockTile(ctx, 0, 'q', 'front')
+  return cv.toDataURL('image/png')
+}
+
 /** A cube whose faces read from a 4-tile atlas: [front/back, sides, top, bottom]. */
 export function blockGeometry(size: number) {
   const g = new THREE.BoxGeometry(size, size, size)

@@ -18,6 +18,10 @@ const ROWS = 16
 const LIFT = 0.15
 export const SITE_W = COLS * V
 export const SITE_H = ROWS * V + LIFT
+/** full height of the voxel model, feet included */
+export const SITE_TOP = (ROWS + 2) * V
+
+const C_SIGNAL = new THREE.Color(P.signal)
 
 function siteLayers(): string[][] {
   const front: string[] = []
@@ -84,6 +88,7 @@ export class Site {
   private _q = new THREE.Quaternion()
   private _p = new THREE.Vector3()
   private _s = new THREE.Vector3()
+  private glowK = NaN
 
   constructor() {
     const vox = voxels(
@@ -142,10 +147,14 @@ export class Site {
     this.body.scale.set(1 + j * 0.1, 1 - j * 0.12 + st.hop * 0.15, 1)
     this.shadow.scale.set(1.2 * (1 - st.hop * 0.8), 0.45 * (1 - st.hop * 0.8), 1)
 
-    // the mark flickers while the site is corrupted
-    const flick = st.damage > 0 && st.pace > 0 && hash1(Math.floor(t * 10) + 3.3) < 0.08 * st.damage
+    // the mark flickers for a beat after each hit (finite: it dies with the jolt)
+    const flick = st.damage > 0 && st.pace > 0 && j > 0.15 && hash1(Math.floor(t * 10) + 3.3) < 0.08 * st.damage
     this.mark.visible = !flick
-    this.markMat.color.set(P.signal).multiplyScalar(1.1 + 0.5 * st.healthy)
+    const glowK = 1.1 + 0.5 * st.healthy
+    if (glowK !== this.glowK) {
+      this.glowK = glowK
+      this.markMat.color.copy(C_SIGNAL).multiplyScalar(glowK)
+    }
 
     // glitch strips
     let n = 0
@@ -245,10 +254,8 @@ export class Shield {
       this._m.compose(this._p, this._q, this._s)
       this.rings.setMatrixAt(n, this._m)
       this.fills.setMatrixAt(n, this._m)
-      this._c.set(P.signal).multiplyScalar(k)
-      this.rings.setColorAt(n, this._c)
-      this._c.set(P.signal).multiplyScalar(0.3 + c.rim * 0.25 + hot * 1.1)
-      this.fills.setColorAt(n, this._c)
+      this.rings.setColorAt(n, this._c.copy(C_SIGNAL).multiplyScalar(k))
+      this.fills.setColorAt(n, this._c.copy(C_SIGNAL).multiplyScalar(0.3 + c.rim * 0.25 + hot * 1.1))
       n++
     }
     this.rings.count = this.fills.count = n

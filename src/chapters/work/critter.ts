@@ -1,24 +1,58 @@
 import * as THREE from 'three'
 import { P } from '../../kit/pixel'
+import { PLAYER1 } from '../../kit/player1'
 import { GeoBuilder, vertexFlat } from './geo'
 
 /*
- * Player 1: a small signal-green critter with big listening ears (Hark means
- * listen). Built from chunky boxes so the CRT pass turns it into a sprite.
+ * Player 1 (kit/player1.ts), voxel-built for the arcade hall: a chibi kid in
+ * the signal-green hoodie with the hood up, headphones over the hood (void
+ * band, white cups), cream face, void dot eyes, coral cheeks, indigo trousers,
+ * white trainers. Chunky boxes with baked palette-ramp shading, so the CRT
+ * pass turns it into a sprite.
+ *
  * Faces +z; origin at its feet. The chapter poses it every frame from
  * scroll-derived state (walk phase, hop, facing) plus a little idle on
- * game-frame steps.
+ * game-frame steps. Its reactions: a cheer (both arms up) when a machine
+ * boots, then a hand to the headphones while it listens.
  */
 
 /** a small player at a big machine */
 export const SCALE = 0.66
 
-export class Critter {
+const SHOULDER_X = 0.265
+const SHOULDER_Y = 0.54
+const NECK_Y = 0.56
+/** arm raised to the headphone cup (rad) */
+const TO_CUP = Math.PI - 0.3
+/** arms thrown up in a V (rad) */
+const CHEER = Math.PI - 0.55
+
+export interface PoseOpts {
+  /** walk frame (integer), or -1 when standing */
+  step: number
+  /** mid-jump: legs tucked, arms up */
+  air: boolean
+  /** landing squash 0..1 */
+  squash: number
+  /** facing */
+  yaw: number
+  /** 0..1: a hand goes to the headphones (listening to the machine) */
+  perk: number
+  /** 0..1: both arms up (a machine booting, LEVEL CLEAR, a poke) */
+  cheer: number
+  /** game-frame counter for the idle bob */
+  idle: number
+  /** head wobble (rad) */
+  wiggle: number
+}
+
+export class Player1 {
   group = new THREE.Group()
   /** everything that bobs */
   body = new THREE.Group()
-  private earL = new THREE.Group()
-  private earR = new THREE.Group()
+  private head = new THREE.Group()
+  private armL = new THREE.Group()
+  private armR = new THREE.Group()
   private footL: THREE.Mesh
   private footR: THREE.Mesh
   /** raycast proxy */
@@ -27,60 +61,73 @@ export class Critter {
 
   constructor(radial: THREE.Texture) {
     const mat = vertexFlat()
-    const b = new GeoBuilder()
-    const G = P.signal
-    const D = P.green
-    // rounded blob body (stacked boxes = pixel-art rounded corners)
-    b.box(0.62, 0.5, 0.5, 0, 0.47, 0, G)
-    b.box(0.5, 0.08, 0.42, 0, 0.76, 0, G)
-    b.box(0.34, 0.04, 0.3, 0, 0.82, 0, G)
-    b.box(0.5, 0.06, 0.42, 0, 0.19, 0, D)
-    b.box(0.07, 0.36, 0.42, -0.34, 0.47, 0, G)
-    b.box(0.07, 0.36, 0.42, 0.34, 0.47, 0, G)
-    // face
-    b.box(0.3, 0.2, 0.02, 0, 0.36, 0.255, P.cream)
-    b.box(0.11, 0.15, 0.02, -0.13, 0.57, 0.256, P.white)
-    b.box(0.11, 0.15, 0.02, 0.13, 0.57, 0.256, P.white)
-    b.box(0.055, 0.09, 0.02, -0.11, 0.555, 0.27, P.void)
-    b.box(0.055, 0.09, 0.02, 0.15, 0.555, 0.27, P.void)
-    b.box(0.07, 0.035, 0.02, -0.25, 0.47, 0.256, P.coral)
-    b.box(0.07, 0.035, 0.02, 0.25, 0.47, 0.256, P.coral)
-    b.box(0.08, 0.025, 0.02, 0.02, 0.465, 0.258, P.void)
-    // arms + tail
-    b.box(0.09, 0.16, 0.12, -0.37, 0.42, 0.06, D)
-    b.box(0.09, 0.16, 0.12, 0.37, 0.42, 0.06, D)
-    b.box(0.12, 0.12, 0.06, 0, 0.3, -0.27, P.cream)
-    // a "1P" stripe on its back (read while it plays a cabinet)
-    b.box(0.34, 0.06, 0.02, 0, 0.6, -0.256, P.gold)
-    const bodyMesh = new THREE.Mesh(b.build(), mat)
-    this.body.add(bodyMesh)
+    const C = PLAYER1
 
-    const ear = (side: number) => {
-      const e = new GeoBuilder()
-      e.box(0.13, 0.42, 0.09, 0, 0.21, 0, G)
-      e.box(0.06, 0.28, 0.02, 0, 0.2, 0.05, P.magenta)
-      e.box(0.13, 0.07, 0.09, 0, 0.4, 0, D)
-      const m = new THREE.Mesh(e.build(), mat)
-      const holder = side < 0 ? this.earL : this.earR
-      holder.add(m)
-      holder.position.set(0.17 * side, 0.78, 0)
+    // ---- hoodie body
+    const b = new GeoBuilder()
+    b.box(0.46, 0.3, 0.3, 0, 0.41, 0, C.hood)
+    b.box(0.48, 0.05, 0.32, 0, 0.26, 0, C.hoodShade) // ribbed hem
+    b.box(0.26, 0.08, 0.02, 0, 0.35, 0.155, C.hoodShade) // kangaroo pocket
+    b.box(0.035, 0.06, 0.02, -0.07, 0.5, 0.156, P.cream) // drawstrings
+    b.box(0.035, 0.06, 0.02, 0.07, 0.5, 0.156, P.cream)
+    this.body.add(new THREE.Mesh(b.build(), mat))
+
+    // ---- head: the hood up, the face in its opening, headphones over it
+    const h = new GeoBuilder()
+    // hood shell, rounded with stacked slabs (pixel-art corners)
+    h.box(0.6, 0.44, 0.5, 0, 0.26, -0.01, C.hood)
+    h.box(0.5, 0.05, 0.44, 0, 0.505, -0.01, C.hood)
+    h.box(0.36, 0.035, 0.34, 0, 0.545, -0.02, C.hood)
+    h.box(0.52, 0.06, 0.4, 0, 0.03, -0.03, C.hoodShade) // hood gathered at the neck
+    // lining round the opening, then the face
+    h.box(0.46, 0.36, 0.02, 0, 0.235, 0.245, C.hoodShade)
+    h.box(0.36, 0.26, 0.02, 0, 0.215, 0.255, C.face)
+    h.box(0.05, 0.08, 0.02, -0.08, 0.245, 0.266, C.eyes)
+    h.box(0.05, 0.08, 0.02, 0.08, 0.245, 0.266, C.eyes)
+    h.box(0.06, 0.035, 0.02, -0.135, 0.17, 0.266, C.cheeks)
+    h.box(0.06, 0.035, 0.02, 0.135, 0.17, 0.266, C.cheeks)
+    // headphones: the band arches over the hood, the cups sit on its sides
+    h.box(0.36, 0.05, 0.09, 0, 0.585, 0, C.phonesBand)
+    h.box(0.08, 0.06, 0.09, -0.225, 0.55, 0, C.phonesBand)
+    h.box(0.08, 0.06, 0.09, 0.225, 0.55, 0, C.phonesBand)
+    h.box(0.045, 0.2, 0.09, -0.3, 0.44, 0, C.phonesBand)
+    h.box(0.045, 0.2, 0.09, 0.3, 0.44, 0, C.phonesBand)
+    h.box(0.03, 0.24, 0.24, -0.32, 0.26, 0, C.phonesBand) // cup backs
+    h.box(0.03, 0.24, 0.24, 0.32, 0.26, 0, C.phonesBand)
+    h.box(0.09, 0.2, 0.2, -0.375, 0.26, 0, C.phonesCup)
+    h.box(0.09, 0.2, 0.2, 0.375, 0.26, 0, C.phonesCup)
+    this.head.add(new THREE.Mesh(h.build(), mat))
+    this.head.position.y = NECK_Y
+    this.body.add(this.head)
+
+    // ---- arms: sleeve, cuff, hand; pivot at the shoulder
+    const arm = (side: number) => {
+      const a = new GeoBuilder()
+      a.box(0.11, 0.2, 0.13, 0, -0.1, 0, C.hood)
+      a.box(0.12, 0.04, 0.14, 0, -0.215, 0, C.hoodShade)
+      a.box(0.1, 0.08, 0.1, 0, -0.27, 0, C.face)
+      const holder = side < 0 ? this.armL : this.armR
+      holder.add(new THREE.Mesh(a.build(), mat))
+      holder.position.set(SHOULDER_X * side, SHOULDER_Y, 0)
       this.body.add(holder)
     }
-    ear(-1)
-    ear(1)
+    arm(-1)
+    arm(1)
 
-    const foot = () => {
+    // ---- legs: trouser leg + trainer
+    const leg = () => {
       const f = new GeoBuilder()
-      f.box(0.2, 0.1, 0.26, 0, 0.05, 0.02, D)
+      f.box(0.14, 0.17, 0.16, 0, 0.155, 0, C.pants)
+      f.box(0.17, 0.08, 0.25, 0, 0.04, 0.035, C.shoes)
       return new THREE.Mesh(f.build(), mat)
     }
-    this.footL = foot()
-    this.footR = foot()
-    this.footL.position.x = -0.15
-    this.footR.position.x = 0.15
+    this.footL = leg()
+    this.footR = leg()
+    this.footL.position.x = -0.12
+    this.footR.position.x = 0.12
     this.group.add(this.body, this.footL, this.footR)
 
-    this.hit = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.6), new THREE.MeshBasicMaterial({ visible: false }))
+    this.hit = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.25, 0.6), new THREE.MeshBasicMaterial({ visible: false }))
     this.hit.position.y = 0.6
     this.body.add(this.hit)
 
@@ -92,19 +139,8 @@ export class Critter {
     this.shadow.renderOrder = 1
   }
 
-  /**
-   * Pose it. `step` = walk frame (integer, or -1 when standing), `air` =
-   * mid-jump (legs tucked, ears streaming), `squash` 0..1 = landing squash,
-   * `yaw` = facing, `perk` 0..1 = ears up (listening), `idle` = game-frame
-   * counter for the idle bob, `ground` = height of the surface under it.
-   */
-  pose(
-    x: number,
-    y: number,
-    z: number,
-    ground: number,
-    o: { step: number; air: boolean; squash: number; yaw: number; perk: number; idle: number; wiggle: number },
-  ) {
+  /** Pose it; `ground` = height of the surface under it (for the shadow). */
+  pose(x: number, y: number, z: number, ground: number, o: PoseOpts) {
     this.group.position.set(x, y, z)
     this.group.rotation.y = o.yaw
     const walking = o.step >= 0 && !o.air
@@ -114,17 +150,24 @@ export class Critter {
     this.footR.position.y = o.air ? 0.04 : walking && odd === 1 ? 0.07 : 0
     this.footL.position.z = o.air ? 0.08 : walking ? (odd === 0 ? 0.06 : -0.04) : 0
     this.footR.position.z = o.air ? -0.08 : walking ? (odd === 1 ? 0.06 : -0.04) : 0
-    // ears: relaxed tilt outward, perk up when listening, stream back mid-jump
-    const relax = 0.34 - 0.2 * o.perk
-    const flop = walking ? (odd ? 0.08 : -0.02) : 0
-    const wig = o.wiggle
-    this.earL.rotation.z = relax + flop + wig + (o.air ? 0.2 : 0)
-    this.earR.rotation.z = -relax - flop + wig - (o.air ? 0.2 : 0)
-    this.earL.rotation.x = o.air ? -0.5 : walking ? -0.12 : 0
-    this.earR.rotation.x = o.air ? -0.5 : walking ? -0.12 : 0
-    const s = 1 + o.perk * 0.1
-    this.earL.scale.y = s
-    this.earR.scale.y = s
+
+    // arms: swing on the walk frames, up in a V mid-jump or cheering, and one
+    // hand to the headphones while it listens (the near-side hand when it
+    // turns to us; quantised to sprite frames)
+    const cheer = o.air ? 1 : o.cheer
+    const perk = Math.round(o.perk * 3) / 3
+    const swing = walking ? (odd ? 0.55 : -0.55) : 0
+    let aL = 0.1 + (TO_CUP - 0.1) * perk
+    let aR = 0.1
+    aL += (CHEER - aL) * cheer
+    aR += (CHEER - aR) * cheer
+    this.armL.rotation.set(swing * (1 - cheer) + 0.45 * perk * (1 - cheer), 0, -aL)
+    this.armR.rotation.set(-swing * (1 - cheer), 0, aR)
+
+    // head: wobble, a tilt toward the raised hand while listening, tuck mid-jump
+    this.head.rotation.z = o.wiggle + 0.1 * perk * (1 - cheer)
+    this.head.rotation.x = o.air ? -0.12 : 0
+
     // squash on landing, stretch in the air
     const sq = o.squash
     const st = o.air ? 0.08 : 0

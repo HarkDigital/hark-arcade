@@ -258,7 +258,8 @@
   box-shadow:
     inset 0 0 0 3px var(--cream),
     2px 2px 0 var(--void);
-  animation: pm-cur 1s steps(1, end) infinite;
+  /* a few blinks, then it holds lit (WCAG 2.2.2: nothing blinks endlessly) */
+  animation: pm-cur 1s steps(1, end) 5;
 }
 @keyframes pm-cur {
   50% {
@@ -272,7 +273,7 @@
   font-size: 10px;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--fg-faint);
+  color: var(--steel);
   white-space: nowrap;
 }
 .stage-process .pm-dot.is-cur .pm-dot-l {
@@ -398,7 +399,62 @@
 .stage-process .pm-blink {
   display: inline-block;
   margin-right: 6px;
-  animation: hud-blink 1s steps(1, end) infinite;
+  animation: hud-blink 1s steps(1, end) 5;
+}
+
+/* ---------------- WORLD CLEAR! over the closing iris ---------------- */
+
+.stage-process .pm-won {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--safe-top) + (100% - var(--safe-top) - var(--safe-bottom)) * 0.2);
+  transform: translate(-50%, -50%);
+  width: max-content;
+  max-width: calc(100% - 2 * var(--gutter));
+  text-align: center;
+  visibility: hidden;
+  pointer-events: none;
+}
+.stage-process .pm-won.is-on {
+  visibility: visible;
+}
+.stage-process .pm-won-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2.6rem, 7.4vw, 7rem);
+  line-height: 0.95;
+  text-transform: uppercase;
+  color: var(--gold);
+  text-shadow:
+    0.05em 0.05em 0 var(--void),
+    0.09em 0.09em 0 var(--magenta);
+  transform: scale(0);
+}
+.stage-process .pm-won.is-on .pm-won-title {
+  animation: pm-won-pop 0.42s steps(6, end) both;
+}
+@keyframes pm-won-pop {
+  0% {
+    transform: scale(0);
+  }
+  55% {
+    transform: scale(1.18);
+  }
+  75% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.stage-process .pm-won-next {
+  display: inline-block;
+  margin: 16px 0 0;
+  padding: 6px 10px;
+  color: var(--void);
+  background: var(--signal);
+  box-shadow: 3px 3px 0 var(--void);
 }
 
 /* ---------------- map tags under the level nodes ---------------- */
@@ -519,13 +575,36 @@
   width: 32px;
   height: 32px;
 }
-@media (max-width: 400px) {
+/* stage names stay readable on phones (>= 11px) */
+@media (max-width: 600px) {
   .stage-process .pm-dot-l {
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0;
   }
+}
+@media (max-width: 400px) {
   .stage-process .pm-res-foot {
     display: none;
+  }
+}
+
+/* short landscape (a phone on its side): tighter windows, a smaller banner */
+@media (orientation: landscape) and (max-height: 500px) {
+  .stage-process .pm-res-foot {
+    display: none;
+  }
+  .stage-process .pm-res-rule {
+    margin: 8px 0;
+  }
+  .stage-process .pm-won {
+    top: calc(var(--safe-top) + 4px);
+    transform: translateX(-50%);
+  }
+  .stage-process .pm-won-title {
+    font-size: clamp(2rem, 11vh, 3.2rem);
+  }
+  .stage-process .pm-won-next {
+    margin-top: 8px;
   }
 }
 
@@ -551,5 +630,9 @@
   .stage-process .pm-results.is-on .pm-res-row.is-live > *,
   .stage-process .pm-results.is-on .pm-res-row.is-done .pm-res-val {
     animation: none;
+  }
+  .stage-process .pm-won.is-on .pm-won-title {
+    animation: none;
+    transform: none;
   }
 }

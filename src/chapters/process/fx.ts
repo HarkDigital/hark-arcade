@@ -167,7 +167,8 @@ export class Bursts {
 
   update(time: number, life = 0.9) {
     let any = false
-    this.slots.forEach((s, si) => {
+    for (let si = 0; si < this.slots.length; si++) {
+      const s = this.slots[si]
       const age = Math.floor((time - s.t0) * 12) / 12
       const alive = age >= 0 && age < life
       for (let i = 0; i < this.per; i++) {
@@ -191,7 +192,7 @@ export class Bursts {
         _m.compose(_p, _q, _s)
         this.mesh.setMatrixAt(idx, _m)
       }
-    })
+    }
     this.mesh.instanceMatrix.needsUpdate = true
     this.mesh.visible = any
   }
@@ -216,9 +217,14 @@ function mergeTwo(a: THREE.BufferGeometry, b: THREE.BufferGeometry) {
 
 /* ------------------------------------------------------------------ clouds */
 
+/** a cloud never takes more than this fraction of the frame width … */
+const CLOUD_MAX_W = 0.13
+/** … nor sits much nearer the lens than the shot's subject */
+const CLOUD_NEAR = 0.6
+
 export class Clouds {
   group = new THREE.Group()
-  private items: { m: THREE.Object3D; x0: number; z0: number; speed: number }[] = []
+  private items: { m: THREE.Object3D; x0: number; z0: number; speed: number; w: number }[] = []
 
   constructor(mobile: boolean) {
     // puffy pixel clouds: a flat belly, rounded ends, bumps on top
@@ -235,6 +241,8 @@ export class Clouds {
       (b: Builder) => puff(b, 1.1, [[0.05, 0.6, 0.2]]),
       (b: Builder) => puff(b, 2.1, [[-0.6, 0.62, 0.2], [0.15, 0.8, 0.32], [0.8, 0.5, 0.14]]),
     ]
+    /** belly length + the 0.3 overhang of the rounded ends */
+    const widths = [1.9, 1.4, 2.4]
     const meshes = shapes.map(fn => {
       const b = new Builder()
       b.outlineWidth = 0.04
@@ -255,18 +263,29 @@ export class Clouds {
       const m = meshes[k].mesh()
       m.position.set(x, y, z)
       this.group.add(m)
-      this.items.push({ m, x0: x, z0: z, speed: 0.14 + (k % 2) * 0.06 })
+      this.items.push({ m, x0: x, z0: z, speed: 0.14 + (k % 2) * 0.06, w: widths[k] })
     }
   }
 
-  /** spread > 1 parts the clouds outward (the camera dives through them) */
-  update(time: number, calm: boolean, spread = 1) {
+  /**
+   * spread > 1 parts the clouds outward (the camera dives through them).
+   * cam / subject / tanV / aspect describe this frame's shot: a puff drifting
+   * close under the lens (the close START and finale shots) would read as a
+   * blank white slab, so it shrinks away in stepped quarters instead.
+   */
+  update(time: number, calm: boolean, spread: number, cam: THREE.Vector3, subject: number, tanV: number, aspect: number) {
     for (const it of this.items) {
       const span = 48
       let x = it.x0 + (calm ? 0 : time * it.speed)
       x = ((((x + span / 2) % span) + span) % span) - span / 2
       it.m.position.x = Math.round(x * spread * 20) / 20
       it.m.position.z = it.z0 * spread
+      const d = Math.max(0.01, it.m.position.distanceTo(cam))
+      const frac = it.w / (2 * d * tanV * Math.max(0.1, aspect))
+      const k = Math.min(clamp((d / Math.max(0.01, subject) - CLOUD_NEAR) / 0.15), clamp((CLOUD_MAX_W * 1.6 - frac) / (CLOUD_MAX_W * 0.6)))
+      const kq = Math.ceil(k * 4) / 4
+      it.m.visible = kq > 0
+      it.m.scale.setScalar(Math.max(0.001, kq))
     }
   }
 }

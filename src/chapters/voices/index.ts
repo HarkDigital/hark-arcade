@@ -7,28 +7,32 @@ import { SECTIONS, TESTIMONIALS } from '../../content'
 import { P, sprite } from '../../kit/pixel'
 import { Village } from './village'
 import { Folk, LOOKS, PLAYER_LOOK } from './folk'
-import { LEGS, NPC_GAP, SPAWN, STOPS, npcSpot } from './path'
+import { EL, LEGS, NPC_GAP, SPAWN, STOPS, npcSpot } from './path'
 import { Dialogue, heartURL } from './dialogue'
 import './voices.css'
 
 /*
- * TOWN CHATTER — client voices as a 16-bit JRPG village.
+ * SIDE QUESTS — client voices as a 16-bit JRPG village.
  *
- * Seen from the classic 3/4 top-down camera, the player (a little hero in
- * signal green, wearing headphones: Hark means listen) drops in at the town
- * gate, then walks the road. For each testimonial they walk up to a villager
- * (who turns, hops and shows a '!'), and the RPG dialogue window opens with
- * the villager's portrait, name + company, and the quote typing out.
+ * Seen from the classic 3/4 top-down camera, Player 1 (kit/player1.ts: the
+ * signal-green hoodie, hood up, headphones on: Hark means listen) drops in at
+ * the village gate (an arch with a hanging SIDE QUESTS nameplate), then walks
+ * the road. For each testimonial they walk up to a villager (who turns, hops
+ * and shows a '!'), and the RPG dialogue window opens with the villager's
+ * portrait, name + company, and the quote typing out.
  *
  *   0.00–0.05   in-beat: the iris opens on the gate, the player drops in
  *   0.024–0.112 location banner 'Client voices' / 'We listen. They talk.'
  *   0.095–0.915 eight beats (SPAN ≈ 0.1025): walk (first 30%), then talk
- *   0.915–1.00  out-beat: the player turns to camera and waves, the iris
+ *   0.915–1.00  out-beat: the player turns to camera and waves, the chest by
+ *               the last stop pops open with a heart container, the iris
  *               closes on them
  *
- * Positions, facing, walk frames, the camera and the bubbles are pure
- * functions of `local` (+ time for idle life). Only the dialogue's
- * typewriter is time-driven, and it settles to the exact text in < 0.8 s.
+ * Positions, facing, walk frames, the camera, the chest and the bubbles are
+ * pure functions of `local` (+ time for idle life; the goodbye wave, the '…'
+ * dots and the village's blinkers all settle within a few seconds). Only the
+ * dialogue's typewriter is time-driven, and it settles to the exact text in
+ * < 0.8 s.
  */
 
 const N = TESTIMONIALS.length
@@ -47,6 +51,14 @@ const HEAD_B = 0.112
 const IN_END = 0.05
 const OUT_A = 0.918
 const HYST = 0.004
+/** the reward: lid swings open, then the heart container rises (done before the 0.94 cut) */
+const CHEST_A = 0.918
+const CHEST_B = 0.926
+const PRIZE_A = 0.922
+const PRIZE_B = 0.936
+/** the goodbye wave (and the '…' bubble) animate this long, then hold still */
+const WAVE_T = 3.2
+const CHAT_T = 3
 
 const beatStart = (k: number) => B0 + k * SPAN
 const anchorAt = (k: number) => B0 + (k + 0.62) * SPAN
@@ -86,8 +98,6 @@ function mixShot(a: Shot, b: Shot, t: number, o: Shot) {
   return o
 }
 
-const EL = THREE.MathUtils.degToRad(48)
-
 export default function create(): Chapter {
   const group = new THREE.Group()
   let village: Village
@@ -105,6 +115,8 @@ export default function create(): Chapter {
   let probe: HTMLElement
   let stageEl: HTMLElement
   let active = false
+  /** when the out-beat wave began (-1 = not in it) */
+  let outAt = -1
 
   // layout measurements (re-read only on resize)
   const ins = { top: 90, bottom: 90, dlg: 220, head: 120 }
@@ -411,11 +423,15 @@ export default function create(): Chapter {
       lift = Math.round(lift / 0.05) * 0.05
     } else if (walk < 0 && !calm) lift = (Math.floor(t * 2) % 2) * 0.03
     let wave = 0
+    let waving = false
     if (local >= OUT_A + 0.006) {
-      wave = calm ? 1 : 1 + (Math.floor(t * 4) % 2)
+      if (outAt < 0) outAt = t
+      // wave for a few seconds, then hold the hand up (still)
+      waving = !calm && t - outAt < WAVE_T
+      wave = waving ? 1 + (Math.floor(t * 4) % 2) : 1
       // a happy hop on every other wave
-      if (!calm) lift = Math.floor(t * 2) % 2 === 0 && Math.floor(t * 4) % 2 === 1 ? 0.1 : 0
-    }
+      lift = waving && Math.floor(t * 2) % 2 === 0 && Math.floor(t * 4) % 2 === 1 ? 0.1 : 0
+    } else outAt = -1
     player.root.position.set(p2.x, 0, p2.y)
     player.pose({ walk, lift, armL: 0, armR: 0, wave, face })
 
@@ -453,7 +469,7 @@ export default function create(): Chapter {
         armR = 0
       }
       n.root.position.set(spot.x, 0, spot.y)
-      n.pose({ walk: -1, lift: nl, armL, armR, wave: local >= OUT_A + 0.01 && i === N - 1 ? (calm ? 1 : 2 - (Math.floor(t * 4) % 2)) : 0, face: nf })
+      n.pose({ walk: -1, lift: nl, armL, armR, wave: local >= OUT_A + 0.01 && i === N - 1 ? (waving ? 2 - (Math.floor(t * 4) % 2) : 1) : 0, face: nf })
       // '!' pops over the villager you're walking up to
       if (i === k && u >= NOTICE && u < 0.44) {
         bangOn = true
@@ -472,7 +488,8 @@ export default function create(): Chapter {
     const sp = dlg.shown
     for (let j = 0; j < talk.length; j++) talk[j].visible = false
     if (sp >= 0 && !(k === sp && u < 0.44)) {
-      const frameIx = calm ? 2 : Math.floor(t * 3) % 3
+      // the dots cycle while the villager is new to the window, then rest at '…'
+      const frameIx = calm || t - dlg.openedAt > CHAT_T ? 2 : Math.floor(t * 3) % 3
       const m = talk[frameIx]
       const spot = npcSpot(sp)
       m.visible = true
@@ -552,6 +569,7 @@ export default function create(): Chapter {
 
     onLeave() {
       active = false
+      outAt = -1
       dlg.reset()
       for (const p of headParts) setRise(p, false)
       head.classList.remove('is-on')
@@ -582,7 +600,8 @@ export default function create(): Chapter {
       dlg.setProgress(k)
 
       updateCharacters(local, frame, calm, proj)
-      village.update(now, calm, proj)
+      village.update(now, calm, proj, k)
+      village.setChest(segment(local, CHEST_A, CHEST_B), segment(local, PRIZE_A, PRIZE_B), calm, proj)
 
       // header banner + outro toast
       const headOn = local > HEAD_A && local < HEAD_B

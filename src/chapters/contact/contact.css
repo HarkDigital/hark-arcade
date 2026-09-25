@@ -198,7 +198,8 @@
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
   border-top: 7px solid var(--signal);
-  animation: hud-blink 1s steps(1, end) infinite;
+  /* finite (WCAG 2.2.2): five blinks, then it rests lit */
+  animation: hud-blink 1s steps(1, end) 5;
 }
 
 /* ---- portrait: the window docks at the bottom, the game plays above it */
@@ -226,6 +227,12 @@
 /* compact (portrait, during the credits): the pitch folds away */
 .stage-contact.ct-compact .ct-body {
   display: none;
+}
+
+/* measuring (hud.ts): nothing may transition, or the reads come back stale */
+.stage-contact.ct-measuring .ct-col,
+.stage-contact.ct-measuring .ct-col * {
+  transition: none !important;
 }
 
 /* short viewports: step the window down until it fits */
@@ -268,6 +275,57 @@
 }
 .stage-contact.ct-fit-4 .ct-foot {
   font-size: 9.5px;
+}
+/* then less copy: the pitch folds away (the copy layer keeps it), then the colophon */
+.stage-contact.ct-fit-5 .ct-body,
+.stage-contact.ct-fit-6 .ct-foot {
+  display: none;
+}
+
+/* ---- short landscape (a phone turned sideways after 'Continue anyway'):
+   the chrome bands are thin (--safe-top / --safe-bottom), so the window
+   loses its secondary copy, goes wide enough for the two buttons to share a
+   row, and sits between the bands beside the game screen. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .stage-contact .ct-win {
+    width: min(440px, 52vw);
+    padding: 10px 16px 12px;
+  }
+  .stage-contact .ct-title {
+    font-size: 32px;
+    margin: 4px 0 8px;
+  }
+  .stage-contact .ct-body,
+  .stage-contact .ct-foot {
+    display: none;
+  }
+  .stage-contact .ct-cta {
+    gap: 8px 10px;
+  }
+  .stage-contact .ct-mail {
+    column-gap: 10px;
+    padding: 6px 14px 7px 10px;
+  }
+  .stage-contact .ct-coin {
+    width: 22px;
+    height: 22px;
+  }
+  .stage-contact .ct-mail-addr {
+    font-size: 20px;
+  }
+  .stage-contact .ct-copy {
+    min-width: 0;
+  }
+  .stage-contact .ct-rule {
+    margin: 8px 0 4px;
+  }
+  .stage-contact .ct-link {
+    padding: 5px 5px;
+  }
+  .stage-contact .ct-more {
+    right: 8px;
+    bottom: 8px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

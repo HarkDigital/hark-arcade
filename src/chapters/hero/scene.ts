@@ -12,7 +12,8 @@ import type { Yielder } from './util'
  *   sun     big striped sun, stripes drifting down (classic)
  *   ridges  two mountain silhouettes with neon rims
  *   city    neon skyline: merged boxes + lit windows (a few flicker) and
- *           rooftop beacons, one draw call each
+ *           rooftop beacons, one draw call each; under reduced motion (uCalm)
+ *           every window and beacon holds steady on and no star twinkles
  *   floor   the scrolling perspective grid (lines stay >= 1 game pixel wide,
  *           fade before they moire; lights up row by row on the intro)
  */
@@ -39,6 +40,7 @@ function skyMaterial() {
     uniforms: {
       uTime: { value: 0 },
       uStars: { value: 1 },
+      uCalm: { value: 0 },
       uSunDir: { value: new THREE.Vector3(0, 0, -1) },
       uSunCos: { value: 0.97 },
       c0: { value: lin(P.coral) },
@@ -56,7 +58,7 @@ function skyMaterial() {
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform float uTime, uStars, uSunCos;
+      uniform float uTime, uStars, uSunCos, uCalm;
       uniform vec3 uSunDir;
       uniform vec3 c0, c1, c2, c3, c4, c5;
       varying vec3 vDir;
@@ -82,7 +84,7 @@ function skyMaterial() {
         float r = hash(cell);
         float star = step(0.9935, r) * smoothstep(0.1, 0.26, e) * uStars;
         // a few stars twinkle on stepped timing (sprite-style, 3 fps)
-        float tw = step(0.9975, r) * step(0.55, hash(cell + floor(uTime * 3.0 + r * 11.0)));
+        float tw = step(0.9975, r) * step(0.55, hash(cell + floor(uTime * 3.0 + r * 11.0))) * (1.0 - uCalm);
         // most stars are dim steel, one in four is a bright one
         vec3 sc = mix(vec3(0.33, 0.37, 0.56), vec3(1.0), step(0.9982, r));
         sc = mix(sc, c3, tw);
@@ -193,7 +195,7 @@ function floorMaterial() {
 function windowMaterial() {
   return new THREE.ShaderMaterial({
     toneMapped: false,
-    uniforms: { uTime: { value: 0 } },
+    uniforms: { uTime: { value: 0 }, uCalm: { value: 0 } },
     vertexShader: /* glsl */ `
       attribute vec3 color;
       attribute float aMode;
@@ -208,7 +210,7 @@ function windowMaterial() {
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform float uTime;
+      uniform float uTime, uCalm;
       varying vec3 vCol;
       varying float vMode, vSeed;
       ${HASH}
@@ -219,7 +221,8 @@ function windowMaterial() {
         // mode 2: a rooftop beacon, slow stepped blink
         float blink = step(0.5, fract(uTime * 0.7 + vSeed));
         on = vMode < 0.5 ? 1.0 : (vMode < 1.5 ? flick : blink);
-        if (on < 0.5) discard;
+        // reduced motion: everything steady on
+        if (max(on, uCalm) < 0.5) discard;
         gl_FragColor = vec4(vCol, 1.0);
       }
     `,
@@ -301,6 +304,25 @@ function ridge(seed: number, z: number, fill: THREE.Color, rim: THREE.Color, pea
   return g
 }
 
+/** Per-frame backdrop inputs (the chapter reuses one object). */
+export interface BackdropState {
+  /** how far (world z from START_Z) the grid is lit on the intro */
+  reach: number
+  /** 1 while the intro's lit row burns cyan */
+  front: number
+  scroll: number
+  /** one game pixel in render-target texels */
+  gamePx: number
+  stars: number
+  sunScale: number
+  sunPos: THREE.Vector3
+  cam: THREE.Vector3
+  /** 1 = reduced motion: windows steady on, no beacon blink, no star twinkle */
+  calm: number
+}
+
+const _d = new THREE.Vector3()
+
 export class Backdrop {
   group = new THREE.Group()
   sky: THREE.Mesh
@@ -310,7 +332,9 @@ export class Backdrop {
   private floorMat = floorMaterial()
   private winMat = windowMaterial()
 
-  constructor() {
+  constructor(calm = false) {
+    this.skyMat.uniforms.uCalm.value = calm ? 1 : 0
+    this.winMat.uniforms.uCalm.value = calm ? 1 : 0
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(800, 32, 16), this.skyMat)
     this.sky.frustumCulled = false
     this.sky.renderOrder = -9
@@ -418,19 +442,21 @@ export class Backdrop {
   }
 
   /** Per frame: idle clocks + the grid's intro reach / scroll. */
-  update(time: number, o: { reach: number; front: number; scroll: number; gamePx: number; stars: number; sunScale: number; sunPos: THREE.Vector3; cam: THREE.Vector3 }) {
+  update(time: number, o: BackdropState) {
     this.skyMat.uniforms.uTime.value = time
     this.skyMat.uniforms.uStars.value = o.stars
+    this.skyMat.uniforms.uCalm.value = o.calm
     if (this.sun) {
       this.sun.scale.setScalar(o.sunScale)
       this.sun.position.copy(o.sunPos)
-      const d = this.sun.position.clone().sub(o.cam)
+      const d = _d.copy(this.sun.position).sub(o.cam)
       const dist = d.length()
       this.skyMat.uniforms.uSunDir.value.copy(d.normalize())
       this.skyMat.uniforms.uSunCos.value = Math.cos(Math.atan((SUN_R * o.sunScale) / dist))
     }
     this.sunMat.uniforms.uTime.value = time
     this.winMat.uniforms.uTime.value = time
+    this.winMat.uniforms.uCalm.value = o.calm
     const f = this.floorMat.uniforms
     f.uReach.value = o.reach
     f.uFront.value = o.front

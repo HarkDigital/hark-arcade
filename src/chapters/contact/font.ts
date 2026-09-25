@@ -223,3 +223,48 @@ export function lineCanvas(text: string, style: TextStyle): HTMLCanvasElement {
   cache.set(key, cv)
   return cv
 }
+
+/** a 1px card behind a sprite: fill, then a border ring, then an outline ring */
+export interface SpriteFrame {
+  fill: string
+  border: string
+  outline: string
+}
+
+/**
+ * A pixel sprite (rows of map keys, '.' = clear) as a small canvas at an
+ * integer scale, cached like the text lines, optionally on a little card
+ * (1px padding, border and outline): the Player 1 portrait in the credits
+ * sits on the same game-pixel grid as the ROM font, and the card lets its
+ * void outline and headphone band read against the night sky.
+ */
+export function spriteCanvas(rows: string[], map: Record<string, string>, scale = 1, frame?: SpriteFrame): HTMLCanvasElement {
+  const key = `spr|${rows.join('/')}|${scale}|${frame ? `${frame.fill},${frame.border},${frame.outline}` : ''}`
+  const hit = cache.get(key)
+  if (hit) return hit
+  const w = Math.max(...rows.map(r => r.length)) * scale
+  const h = rows.length * scale
+  const pad = frame ? 3 : 0
+  const cv = document.createElement('canvas')
+  cv.width = w + pad * 2
+  cv.height = h + pad * 2
+  const ctx = cv.getContext('2d')!
+  if (frame) {
+    ctx.fillStyle = frame.outline
+    ctx.fillRect(0, 0, cv.width, cv.height)
+    ctx.fillStyle = frame.border
+    ctx.fillRect(1, 1, cv.width - 2, cv.height - 2)
+    ctx.fillStyle = frame.fill
+    ctx.fillRect(2, 2, cv.width - 4, cv.height - 4)
+  }
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const col = map[row[x]]
+      if (!col) continue
+      ctx.fillStyle = col
+      ctx.fillRect(pad + x * scale, pad + y * scale, scale, scale)
+    }
+  })
+  cache.set(key, cv)
+  return cv
+}

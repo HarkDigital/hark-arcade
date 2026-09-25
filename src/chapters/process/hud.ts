@@ -1,5 +1,6 @@
 import { el, rise, setRise } from '../../core/dom'
 import { PROCESS, STATS } from '../../content'
+import { CHAPTERS } from '../index'
 
 /*
  * World-map HUD (visual layer only — the stage is aria-hidden and
@@ -10,6 +11,7 @@ import { PROCESS, STATS } from '../../content'
  *   - the RESULTS screen: the three stats tally up like an end-of-level
  *     score screen and settle on the exact values
  *   - little map tags under each level node
+ *   - the WORLD CLEAR! banner over the closing iris (+ next level)
  */
 
 export interface Band {
@@ -21,7 +23,7 @@ export interface Band {
 
 export interface Layout {
   portrait: boolean
-  /** portrait screens too short for title + card together: title yields */
+  /** screens too short for title + card together: title yields */
   compact: boolean
   /** free screen band for the map while the title (and card) are up */
   follow: Band
@@ -88,6 +90,8 @@ function tallyText(i: number, k: number) {
   return `${Math.floor(k * 15)}`
 }
 
+const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
+
 function typeSpans(text: string) {
   // words stay unbreakable; chars inside reveal on a stepped delay
   let i = 0
@@ -123,6 +127,8 @@ export class MapHud {
   private resT0 = 0
   private tally = [-1, -1, -1]
   private headOn = false
+  private won: HTMLElement
+  private wonOn = false
 
   constructor(stage: HTMLElement) {
     const root = (this.root = el('div', 'pm', undefined, stage))
@@ -177,6 +183,13 @@ export class MapHud {
     const foot = el('p', 'pm-res-foot', undefined, res)
     foot.innerHTML = '<span class="pm-blink">&#9654;</span> Scroll to continue'
 
+    // ---- world clear banner (like the arcade hall's LEVEL CLEAR!)
+    this.won = el('div', 'pm-won', undefined, root)
+    const next = CHAPTERS[CHAPTERS.findIndex(c => c.id === 'process') + 1]
+    this.won.innerHTML = `<p class="pm-won-title">World clear!</p>${
+      next ? `<p class="pm-won-next hud-label">Next level <span aria-hidden="true">&#9654;</span> ${esc(next.label)}</p>` : ''
+    }`
+
     // ---- map tags (START + 4 levels)
     const tags = el('div', 'pm-tags', undefined, root)
     const names = ['Start', ...PROCESS.map(p => p.title)]
@@ -205,6 +218,9 @@ export class MapHud {
       const col = Math.max(hr.right, cr.right) + 20
       follow = { l: col, r: W - gutter, t: safeTop, b: H - safeBottom }
       overview = { l: hr.right + 20, r: W - gutter, t: safeTop, b: H - safeBottom }
+      // short landscape (a phone on its side): the column can't stack both
+      // windows, so the title yields while a level card is up
+      compact = cr.top < hr.bottom + 8
     } else {
       const gap = cr.top - hr.bottom
       compact = gap < Math.max(210, H * 0.3)
@@ -245,7 +261,7 @@ export class MapHud {
       this.clearMask = mask
       this.dots.forEach((d, k) => d.classList.toggle('is-clear', !!(mask & (1 << k))))
     }
-    this.dots.forEach((d, k) => d.classList.toggle('is-cur', k === i && !(mask & (1 << k))))
+    for (let k = 0; k < this.dots.length; k++) this.dots[k].classList.toggle('is-cur', k === i && !(mask & (1 << k)))
     this.card.classList.toggle('is-clear', i >= 0 && !!(mask & (1 << i)))
   }
 
@@ -259,7 +275,8 @@ export class MapHud {
     }
     if (!on) return
     const t = time - this.resT0
-    this.rows.forEach((r, i) => {
+    for (let i = 0; i < this.rows.length; i++) {
+      const r = this.rows[i]
       const k = calm ? 1 : Math.max(0, Math.min(1, (t - 0.18 - i * 0.26) / 0.55))
       // step the counter at ~15 fps like a score tally
       const q = k >= 1 ? 1 : Math.floor(k * 12) / 12
@@ -269,16 +286,24 @@ export class MapHud {
         r.row.classList.toggle('is-done', q >= 1)
         r.row.classList.toggle('is-live', q > 0 || calm)
       }
-    })
+    }
+  }
+
+  setWon(on: boolean) {
+    if (on !== this.wonOn) {
+      this.wonOn = on
+      this.won.classList.toggle('is-on', on)
+    }
   }
 
   /** place map tags: pts in px (null = hidden), state per tag */
   setTags(pts: ({ x: number; y: number } | null)[], state: ('' | 'cur' | 'clear')[]) {
-    this.tagEls.forEach((t, i) => {
+    for (let i = 0; i < this.tagEls.length; i++) {
+      const t = this.tagEls[i]
       const p = pts[i]
       if (!p) {
         if (t.style.visibility !== 'hidden') t.style.visibility = 'hidden'
-        return
+        continue
       }
       t.style.visibility = 'visible'
       t.style.transform = `translate3d(${Math.round(p.x)}px, ${Math.round(p.y)}px, 0) translate(-50%, 0)`
@@ -288,6 +313,6 @@ export class MapHud {
         t.classList.toggle('is-cur', s === 'cur')
         t.classList.toggle('is-clear', s === 'clear')
       }
-    })
+    }
   }
 }

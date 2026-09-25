@@ -1,5 +1,6 @@
 import { BRAND, CONTACT, MICROCOPY, PROCESS, SECTIONS, SECURITY, SERVICES, STATS, TESTIMONIALS, WORK, workImage } from '../content'
 import { CONCEPT_TAG, WORDMARK } from './mark'
+import { CHAPTERS } from '../chapters/index'
 import { unmountRotateGate } from './rotate'
 import { releaseInert } from './inert'
 import { ICON, pixelMark } from './pixelart'
@@ -34,14 +35,16 @@ export function renderFallback(root: HTMLElement) {
   const isPreview = (url: string) => /harktest\.com/.test(url)
   const pad2 = (n: number) => String(n).padStart(2, '0')
 
+  /** level names come from the chapter defs, so the booklet never drifts from the game */
+  const gameName = (id: string, fallback: string) => CHAPTERS.find(c => c.id === id)?.label ?? fallback
   const LEVELS = [
-    { href: '#fb-top', game: 'Title Screen', plain: 'Home', page: 1 },
-    { href: '#fb-work', game: 'Arcade Hall', plain: 'Work', page: 4 },
-    { href: '#fb-services', game: 'Power-Ups', plain: 'Services', page: 8 },
-    { href: '#fb-voices', game: 'Town Chatter', plain: 'Clients', page: 12 },
-    { href: '#fb-security', game: 'Boss Fight', plain: 'Security', page: 15 },
-    { href: '#fb-process', game: 'World Map', plain: 'Process', page: 17 },
-    { href: '#fb-contact', game: 'Continue?', plain: 'Contact', page: 20 },
+    { href: '#fb-top', game: gameName('hero', 'Title Screen'), plain: 'Home', page: 1 },
+    { href: '#fb-work', game: gameName('work', 'Arcade Hall'), plain: 'Work', page: 4 },
+    { href: '#fb-services', game: gameName('services', 'Power-Ups'), plain: 'Services', page: 8 },
+    { href: '#fb-voices', game: gameName('voices', 'Side Quests'), plain: 'Clients', page: 12 },
+    { href: '#fb-security', game: gameName('shield', 'Boss Fight'), plain: 'Security', page: 15 },
+    { href: '#fb-process', game: gameName('process', 'World Map'), plain: 'Process', page: 17 },
+    { href: '#fb-contact', game: gameName('contact', 'Continue?'), plain: 'Contact', page: 20 },
   ]
   /** the running head of each booklet page */
   const head = (i: number, extra: string) =>

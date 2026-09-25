@@ -12,6 +12,17 @@ import { T } from './timeline'
  */
 
 const STAT = STATS.find(s => s.value === '24/7') ?? STATS[STATS.length - 1]
+/**
+ * The results card and the HP row close as the out-beat starts, and YOU WIN!
+ * a beat later: this level is short (1.9 screens), so its closing iris is
+ * already on its way from local ~0.905 and nothing should hang over the black.
+ */
+const CLOSE = T.out[0] + 0.005
+const WIN_OFF = 0.95
+
+function tog(n: HTMLElement, on: boolean, cls = 'is-in') {
+  if (n.classList.contains(cls) !== on) n.classList.toggle(cls, on)
+}
 
 function icon(rows: string[], map: Record<string, string>) {
   const w = Math.max(...rows.map(r => r.length))
@@ -83,9 +94,9 @@ export class Hud {
   private dialogTyper: Typer
   private win: HTMLElement
   private winCard: HTMLElement
-  private warning: HTMLElement
+  warning: HTMLElement
   private youwin: HTMLElement
-  private last = { site: '', boss: '', ko: false }
+  private last = { site: -1, boss: -1, ko: false }
 
   constructor(stage: HTMLElement) {
     const root = (this.root = el('div', 'bf', undefined, stage))
@@ -166,21 +177,26 @@ export class Hud {
     s.setProperty('--ah', `${h.toFixed(1)}px`)
   }
 
-  update(local: number, time: number, instant: boolean, siteHP: number, bossHP: number) {
-    const tog = (n: HTMLElement, on: boolean, cls = 'is-in') => {
-      if (n.classList.contains(cls) !== on) n.classList.toggle(cls, on)
-    }
-    tog(this.hp, local > T.hp && local < 0.992)
+  /** place the WARNING! band (px; the chapter keeps it clear of the site and the chrome) */
+  setWarning(x: number, y: number, w: number) {
+    const s = this.root.style
+    s.setProperty('--wx', `${Math.round(x)}px`)
+    s.setProperty('--wy', `${Math.round(y)}px`)
+    s.setProperty('--ww', `${Math.round(w)}px`)
+  }
 
-    const s = siteHP.toFixed(3)
+  update(local: number, time: number, instant: boolean, siteHP: number, bossHP: number) {
+    tog(this.hp, local > T.hp && local < CLOSE)
+
+    const s = Math.round(siteHP * 1000)
     if (s !== this.last.site) {
       this.last.site = s
-      this.siteMeter.style.setProperty('--hp', s)
+      this.siteMeter.style.setProperty('--hp', String(s / 1000))
     }
-    const b = bossHP.toFixed(3)
+    const b = Math.round(bossHP * 1000)
     if (b !== this.last.boss) {
       this.last.boss = b
-      this.bossMeter.style.setProperty('--hp', b)
+      this.bossMeter.style.setProperty('--hp', String(b / 1000))
     }
     tog(this.siteBar, siteHP < 0.45, 'is-low')
     tog(this.siteBar, siteHP > 0.999 && local > T.refill[1] - 0.005, 'is-full')
@@ -206,11 +222,11 @@ export class Hud {
     tog(this.dialog, dialogOn)
     this.dialogTyper.update(dialogOn, time, instant)
 
-    const winOn = local > T.card && local < 0.992
+    const winOn = local > T.card && local < CLOSE
     tog(this.win, winOn)
     tog(this.winCard, winOn)
 
     tog(this.warning, local > T.warning[0] && local < T.warning[1])
-    tog(this.youwin, local > T.win && local < 0.965)
+    tog(this.youwin, local > T.win && local < WIN_OFF)
   }
 }

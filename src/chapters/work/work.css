@@ -97,7 +97,8 @@
 }
 .stage-work .wk-ready.is-on span {
   display: inline-block;
-  animation: wk-blink 0.9s steps(1, end) infinite;
+  /* finite (WCAG 2.2.2): four blinks, then it stays lit */
+  animation: wk-blink 0.9s steps(1, end) 4;
 }
 @keyframes wk-blink {
   60% {
@@ -232,7 +233,7 @@
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
   border-top: 8px solid var(--signal);
-  animation: wk-bob 0.8s steps(2, end) infinite;
+  animation: wk-bob 0.8s steps(2, end) 5;
 }
 @keyframes wk-bob {
   50% {
@@ -240,7 +241,7 @@
   }
 }
 
-/* ---------------- high-score table ---------------- */
+/* ---------------- the multi-game machine's menu ---------------- */
 
 .stage-work .wk-scores {
   padding: 26px 20px 18px;
@@ -278,7 +279,7 @@
   font-size: 22px;
   line-height: 1.05;
 }
-.stage-work .wk-rank {
+.stage-work .wk-no {
   font-family: var(--font-mono);
   font-size: 12px;
 }
@@ -327,7 +328,7 @@
 .stage-work .is-sel .wk-row::before,
 .stage-work .wk-row:hover::before {
   visibility: visible;
-  animation: hud-blink 1s steps(1, end) infinite;
+  animation: hud-blink 1s steps(1, end) 4;
 }
 .stage-work .wk-cta-note {
   color: var(--fg-muted);
@@ -429,8 +430,8 @@
   .stage-work .wk-row {
     grid-template-columns: 2.7em minmax(0, 1fr) 1em;
     grid-template-areas:
-      'rank name arrow'
-      'rank ind arrow';
+      'no name arrow'
+      'no ind arrow';
     column-gap: 8px;
     padding: 3px 6px 3px 18px;
     font-size: 20px;
@@ -438,8 +439,8 @@
   .stage-work .wk-row::before {
     left: 4px;
   }
-  .stage-work .wk-rank {
-    grid-area: rank;
+  .stage-work .wk-no {
+    grid-area: no;
     font-size: 11px;
   }
   .stage-work .wk-rname {
@@ -476,13 +477,32 @@
   .stage-work .wk-name {
     font-size: 1.7rem;
   }
+  /* the menu: one line per site (industry hidden), so the machine shows above it */
+  .stage-work .wk-scores {
+    padding: 20px 12px 10px;
+  }
+  .stage-work .wk-scores-title {
+    font-size: 1.5rem;
+  }
+  .stage-work .wk-rows {
+    margin-top: 4px;
+  }
   .stage-work .wk-rows .wk-row {
+    grid-template-areas: 'no name arrow';
+    grid-template-columns: 2.2em minmax(0, 1fr) 1em;
     padding-top: 1px;
     padding-bottom: 1px;
-    line-height: 1;
+    font-size: 17px;
+    line-height: 1.05;
+  }
+  .stage-work .wk-rows .wk-rind {
+    display: none;
   }
   .stage-work .wk-scores .wk-cta {
-    margin-top: 10px;
+    margin-top: 8px;
+  }
+  .stage-work .wk-scores .hud-btn {
+    padding: 8px 14px;
   }
 }
 
@@ -500,6 +520,82 @@
     font-size: 20px;
     padding-top: 1px;
     padding-bottom: 1px;
+  }
+}
+
+/* Short landscape (a phone turned sideways after 'Continue anyway'): the
+   windows must fit between the thin chrome bands, so they drop their
+   secondary lines and the menu goes to two columns (still in data order). */
+@media (orientation: landscape) and (max-height: 500px) {
+  .stage-work .wk-dock {
+    width: min(420px, 46vw);
+  }
+  .stage-work .wk-dock--scores {
+    width: min(560px, 60vw);
+  }
+  .stage-work .wk-card {
+    padding: 20px 16px 12px;
+  }
+  .stage-work .wk-name {
+    font-size: 1.75rem;
+  }
+  .stage-work .wk-kind {
+    margin-top: 6px;
+    font-size: 11px;
+  }
+  .stage-work .wk-card .hud-rule,
+  .stage-work .wk-tags,
+  .stage-work .wk-host,
+  .stage-work .wk-more,
+  .stage-work .wk-cta-note {
+    display: none;
+  }
+  .stage-work .wk-blurb {
+    margin-top: 8px;
+    min-height: 0;
+    font-size: 17px;
+    line-height: 1.2;
+  }
+  .stage-work .wk-cta {
+    margin-top: 10px;
+  }
+  .stage-work .wk-win .hud-btn {
+    padding: 7px 12px;
+  }
+  .stage-work .wk-intro {
+    top: calc(var(--safe-top) + 12px);
+    padding: 20px 18px 12px;
+  }
+  .stage-work .wk-intro-title {
+    font-size: clamp(2rem, 5.6vw, 3rem);
+  }
+  .stage-work .wk-scores {
+    padding: 18px 12px 10px;
+  }
+  .stage-work .wk-scores-title {
+    font-size: 1.45rem;
+  }
+  .stage-work .wk-rows {
+    columns: 2;
+    column-gap: 10px;
+    margin-top: 6px;
+  }
+  .stage-work .wk-rows li {
+    break-inside: avoid;
+  }
+  .stage-work .wk-rows .wk-row {
+    grid-template-areas: 'no name arrow';
+    grid-template-columns: 1.9em minmax(0, 1fr) 0.8em;
+    column-gap: 6px;
+    padding: 1px 4px 1px 16px;
+    font-size: 16px;
+    line-height: 1.05;
+  }
+  .stage-work .wk-rows .wk-rind {
+    display: none;
+  }
+  .stage-work .wk-scores .wk-cta {
+    margin-top: 8px;
   }
 }
 

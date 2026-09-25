@@ -8,7 +8,7 @@ import { logoGeometry } from '../../logo/logo'
  *   - chunky countdown digits 4..9 (gold face, orange sides)
  *   - the arcade coin door (steel frame, lit coin slot, coin-return button)
  *   - a coin (spins on 8 fps steps, like a sprite)
- *   - the Hark mark (extruded; dim while the timer runs, lit when it stops)
+ *   - the Hark mark (extruded, signal green; a white frame when the timer stops)
  */
 
 const DIGITS: Record<number, string[]> = {
@@ -132,7 +132,6 @@ export function buildCoin() {
 
 export interface Mark {
   mesh: THREE.Mesh
-  dim: THREE.Material
   lit: THREE.Material
   flash: THREE.Material
 }
@@ -140,9 +139,8 @@ export interface Mark {
 let markGeo: THREE.BufferGeometry | null = null
 export function buildMark(): Mark {
   markGeo ??= logoGeometry({ depth: 0.26, bevelSize: 0.01, bevelThickness: 0.014, curveSegments: 18 })
-  const dim = toon(P.pine)
   const lit = toon(P.signal)
   const flash = new THREE.MeshBasicMaterial({ color: new THREE.Color(P.white) })
-  const mesh = new THREE.Mesh(markGeo, dim)
-  return { mesh, dim, lit, flash }
+  const mesh = new THREE.Mesh(markGeo, lit)
+  return { mesh, lit, flash }
 }

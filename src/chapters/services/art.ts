@@ -1,4 +1,5 @@
 import { P } from '../../kit/pixel'
+import { PLAYER1 } from '../../kit/player1'
 
 /*
  * Pixel art for the Power-Ups level, as ASCII. One char = one pixel (or one
@@ -254,107 +255,130 @@ export const ICONS: string[][] = [GEAR, BRUSH, CART, LENS, BOLT, CHIP, DRONE, ME
 export const SHORT = ['Software', 'Web Design', 'Ecommerce', 'SEO / GEO', 'Page Speed', 'AI', 'Aerial', 'Remediation', 'Security', 'ADA', 'WordPress']
 
 /* ------------------------------------------------------------------ */
-/* the player: a small listener in big signal-green headphones          */
+/* the player: PLAYER 1, side view (kit/player1.ts is the spec)         */
 /* ------------------------------------------------------------------ */
+
+/*
+ * Hood up (signal green, the back and underside in green), white-cupped
+ * headphones over the hood on a void band, cream face, void eye, coral
+ * cheek, indigo trousers, white trainers. Facing right. The frames use their
+ * own key (HERO_KEY) so every colour comes straight from the PLAYER1 spec:
+ *
+ *   G hood   g hood shade   h phones band   w phones cup   s cup grille
+ *   c face/hands   e eyes   r cheeks   i trousers   W trainers
+ */
+export const HERO_KEY: Record<string, string> = {
+  k: PLAYER1.outline,
+  G: PLAYER1.hood,
+  g: PLAYER1.hoodShade,
+  h: PLAYER1.phonesBand,
+  w: PLAYER1.phonesCup,
+  s: P.steel,
+  c: PLAYER1.face,
+  e: PLAYER1.eyes,
+  r: PLAYER1.cheeks,
+  i: PLAYER1.pants,
+  W: PLAYER1.shoes,
+}
 
 const HERO_IDLE = [
   '....GGGGGG....',
-  '...GBBBBBBG...',
-  '..GBBBBBBBBG..',
-  '..GBBBBBBBBBB.',
-  '.GGGBBBBBBBBB.',
-  '.GqGBBBcBBcB..',
-  '.GqGBBcccckc..',
-  '.GGGBccccckc..',
-  '..BBcccccccrc.',
-  '...ccccccccc..',
-  '....cccccc....',
-  '...rrcrrrrr...',
-  '..rrrcrrrrrc..',
-  '..cmrrrrrrr...',
-  '...mmmmmmm....',
+  '...GGhhhhGG...',
+  '..gGhGGGGGGG..',
+  '..ghGGGGGGGGG.',
+  '.wwwGGGGGGGGG.',
+  '.wswGGGggggg..',
+  '.wswGGgcccec..',
+  '.wwwGgccccec..',
+  '..gggccccccrc.',
+  '...gggcccccc..',
+  '....ggcccc....',
+  '...gGgGGGGG...',
+  '..gGGgGGGGGc..',
+  '..cgggggggg...',
+  '...iiiiiii....',
   '...iii.iii....',
-  '..wwww.wwww...',
+  '..WWWW.WWWW...',
 ]
 
 const HERO_RUN_A = [
   '....GGGGGG....',
-  '...GBBBBBBG...',
-  '..GBBBBBBBBG..',
-  '..GBBBBBBBBBB.',
-  '.GGGBBBBBBBBB.',
-  '.GqGBBBcBBcB..',
-  '.GqGBBcccckc..',
-  '.GGGBccccckc..',
-  '..BBcccccccrc.',
-  '...ccccccccc..',
-  '....cccccc....',
-  '..crrcrrrrr...',
-  '...rrcrrrrrrc.',
-  '...mrrrrrrm...',
-  '..iimmmmmii...',
+  '...GGhhhhGG...',
+  '..gGhGGGGGGG..',
+  '..ghGGGGGGGGG.',
+  '.wwwGGGGGGGGG.',
+  '.wswGGGggggg..',
+  '.wswGGgcccec..',
+  '.wwwGgccccec..',
+  '..gggccccccrc.',
+  '...gggcccccc..',
+  '....ggcccc....',
+  '..cgGgGGGGG...',
+  '...gGgGGGGGGc.',
+  '...gggggggg...',
+  '..iiiiiiiii...',
   '.ii.......ii..',
-  'www.......www.',
+  'WWW.......WWW.',
 ]
 
 const HERO_RUN_B = [
   '..............',
   '....GGGGGG....',
-  '...GBBBBBBG...',
-  '..GBBBBBBBBG..',
-  '..GBBBBBBBBBB.',
-  '.GGGBBBBBBBBB.',
-  '.GqGBBBcBBcB..',
-  '.GqGBBcccckc..',
-  '.GGGBccccckc..',
-  '..BBcccccccrc.',
-  '...ccccccccc..',
-  '....cccccc....',
-  '...rrcrrrrr...',
-  '...rrcrcrrr...',
-  '...mmmmmmm....',
+  '...GGhhhhGG...',
+  '..gGhGGGGGGG..',
+  '..ghGGGGGGGGG.',
+  '.wwwGGGGGGGGG.',
+  '.wswGGGggggg..',
+  '.wswGGgcccec..',
+  '.wwwGgccccec..',
+  '..gggccccccrc.',
+  '...gggcccccc..',
+  '....ggcccc....',
+  '...gGgGGGGG...',
+  '...gGgcgggg...',
+  '...iiiiiii....',
   '....iiii......',
-  '....wwwww.....',
+  '....WWWWW.....',
 ]
 
 const HERO_JUMP = [
   '..........c...',
   '....GGGGGGc...',
-  '...GBBBBBBGr..',
-  '..GBBBBBBBBGr.',
-  '..GBBBBBBBBBr.',
-  '.GGGBBBBBBBBB.',
-  '.GqGBBBcBBcB..',
-  '.GqGBBcccckc..',
-  '.GGGBccccckc..',
-  '..BBcccccccrc.',
-  '...ccccccccc..',
-  '....cccccc....',
-  '...rrcrrrr....',
-  '..crrcrrrr....',
-  '...mmmmmmii...',
-  '..iii...iiww..',
-  '..www....ww...',
+  '...GGhhhhGgG..',
+  '..gGhGGGGGGgG.',
+  '..ghGGGGGGGgG.',
+  '.wwwGGGGGGGGG.',
+  '.wswGGGggggg..',
+  '.wswGGgcccec..',
+  '.wwwGgccccec..',
+  '..gggccccccrc.',
+  '...gggcccccc..',
+  '....ggcccc....',
+  '...gGgGGGG....',
+  '..cgggggggg...',
+  '...iiiiiiii...',
+  '..iii...iiWW..',
+  '..WWW....WW...',
 ]
 
 const HERO_CHEER = [
   '.c..........c.',
-  '.r..GGGGGG..r.',
-  '.rrGBBBBBBGrr.',
-  '..GBBBBBBBBG..',
-  '..GBBBBBBBBBB.',
-  '.GGGBBBBBBBBB.',
-  '.GqGBBBcBBcB..',
-  '.GqGBBckcckc..',
-  '.GGGBcccccccc.',
-  '..BBccckkkcrc.',
-  '...ccccccccc..',
-  '....cccccc....',
-  '...rrcrrrrr...',
-  '...rrcrrrrr...',
-  '...mmmmmmm....',
+  '.G..GGGGGG..G.',
+  '.gGgGhhhhGgGg.',
+  '..gGhGGGGGGG..',
+  '..ghGGGGGGGGG.',
+  '.wwwGGGGGGGGG.',
+  '.wswGGGggggg..',
+  '.wswGGgeccec..',
+  '.wwwGgccccccc.',
+  '..gggcceeecrc.',
+  '...gggcccccc..',
+  '....ggcccc....',
+  '...gGGGGGGG...',
+  '...gggggggg...',
+  '...iiiiiii....',
   '...iii.iii....',
-  '..wwww.wwww...',
+  '..WWWW.WWWW...',
 ]
 
 export const HERO = {

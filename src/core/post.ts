@@ -16,6 +16,15 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
  *  - IRIS WIPE at chapter cuts: a pixel-stepped circle closes to black at the
  *    boundary and opens on the next level (classic game transition).
  *  - glitch = VHS tracking wobble; flash = white flash (hits, power-ups).
+ *
+ * Resolution: the scene, sanitize, bloom and output passes render at GRID
+ * resolution (about 2 texels per game pixel, see Post.scale), not at device
+ * resolution: the CRT pass only ever reads 4 taps per game pixel, so shading
+ * the scene 64x over was pure waste. Only this final pass runs at display
+ * resolution (it draws the scanlines and aperture mask).
+ *
+ * Flash budget: no more than one white-flash onset per FLASH_GAP seconds,
+ * whatever the chapters ask for (WCAG 2.3.1: at most 3 flashes a second).
  */
 export const PALETTE_HEX = [
   '#0b0d14', // 0 void
@@ -42,6 +51,9 @@ const PALETTE_GLSL = PALETTE_HEX.map(h => {
   const c = parseInt(h.slice(1), 16)
   return `vec3(${(((c >> 16) & 255) / 255).toFixed(4)}, ${(((c >> 8) & 255) / 255).toFixed(4)}, ${((c & 255) / 255).toFixed(4)})`
 })
+
+/** minimum seconds between two white-flash onsets (WCAG 2.3.1) */
+const FLASH_GAP = 0.4
 
 const FinalShader = {
   uniforms: {
@@ -81,10 +93,9 @@ const FinalShader = {
     varying vec2 vUv;
 
     const int NPAL = ${PALETTE_HEX.length};
-    vec3 pal(int i) {
-      ${PALETTE_GLSL.map((c, i) => `if (i == ${i}) return ${c};`).join('\n      ')}
-      return vec3(0.0);
-    }
+    const vec3 PAL[${PALETTE_HEX.length}] = vec3[${PALETTE_HEX.length}](
+      ${PALETTE_GLSL.join(',\n      ')}
+    );
     float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
     float bayer4(vec2 p) {
       vec2 q = mod(floor(p), 4.0);
@@ -96,10 +107,10 @@ const FinalShader = {
     }
     vec3 snapPalette(vec3 c) {
       // nearest palette colour, weighting green (luma-ish) distance higher
-      vec3 best = pal(0);
+      vec3 best = PAL[0];
       float bd = 1e9;
       for (int i = 0; i < NPAL; i++) {
-        vec3 p = pal(i);
+        vec3 p = PAL[i];
         vec3 d = (c - p) * vec3(0.9, 1.25, 0.75);
         float dd = dot(d, d);
         if (dd < bd) { bd = dd; best = p; }
@@ -140,7 +151,7 @@ const FinalShader = {
       // CRT: scanlines within each game pixel row + RGB aperture mask
       vec2 fragCss = gl_FragCoord.xy / uDpr;
       float within = fract(uv.y * grid.y);
-      float scan = 0.72 + 0.28 * smoothstep(0.0, 0.35, within) * smoothstep(1.0, 0.65, within);
+      float scan = 0.72 + 0.28 * smoothstep(0.0, 0.35, within) * (1.0 - smoothstep(0.65, 1.0, within));
       float m = mod(floor(fragCss.x), 3.0);
       vec3 mask = m < 1.0 ? vec3(1.0, 0.78, 0.78) : m < 2.0 ? vec3(0.78, 1.0, 0.78) : vec3(0.78, 0.78, 1.0);
       col *= mix(vec3(1.0), scan * mask * 1.12, uCrt);
@@ -248,19 +259,29 @@ export class Post {
   private current: PostParams = { ...POST_DEFAULTS }
   transition = 0
   fade = 0
+  /**
+   * Internal render scale: texels per CSS px for the scene + bloom passes
+   * (about 2 per game pixel at the finest pixel size used on this device).
+   * Screen-space shaders that care about game pixels read this, not the
+   * renderer's pixel ratio.
+   */
+  scale = 1
+  private readonly finest: number
+  private lastFlashAt = -1e9
+  private flashLive = false
+  private flashOk = true
 
   constructor(
     private renderer: THREE.WebGLRenderer,
     scene: THREE.Scene,
     camera: THREE.Camera,
-    /** skip MSAA (retina / mobile: already supersampled, and MSAA half-float targets are huge) */
-    noMsaa: boolean,
+    /** finest game pixel (CSS px) any chapter uses on this device */
+    finest: number,
   ) {
+    this.finest = finest
     const size = renderer.getDrawingBufferSize(new THREE.Vector2())
-    const rt = new THREE.WebGLRenderTarget(size.x, size.y, {
-      type: THREE.HalfFloatType,
-      samples: noMsaa ? 0 : 4,
-    })
+    // no MSAA: the 4-tap pixelation averages edges anyway
+    const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 0 })
     this.composer = new EffectComposer(renderer, rt)
     this.composer.addPass(new RenderPass(scene, camera))
     this.composer.addPass(new ShaderPass(SanitizeShader))
@@ -304,9 +325,12 @@ export class Post {
   }
 
   setSize(w: number, h: number, dpr: number) {
-    this.composer.setPixelRatio(dpr)
+    // scene + bloom at ~2 texels per finest game pixel; the final pass draws
+    // to the canvas at full display resolution
+    this.scale = Math.min(dpr, 2 / this.finest)
+    this.composer.setPixelRatio(this.scale)
     this.composer.setSize(w, h)
-    this.bloom.resolution.set((w * dpr) / 2, (h * dpr) / 2)
+    this.bloom.resolution.set((w * this.scale) / 2, (h * this.scale) / 2)
     this.final.uniforms.uResolution.value.set(w * dpr, h * dpr)
     this.final.uniforms.uDpr.value = dpr
   }
@@ -319,6 +343,16 @@ export class Post {
       // flash & glitch respond instantly so chapters can punch them
       c[key] = key === 'flash' || key === 'glitch' || key === 'irisX' || key === 'irisY' ? p[key] : c[key] + (p[key] - c[key]) * k
     }
+    // flash budget: a new flash that starts within FLASH_GAP of the last one
+    // is dropped for its whole duration
+    if (c.flash > 0.02) {
+      if (!this.flashLive) {
+        this.flashLive = true
+        this.flashOk = time - this.lastFlashAt >= FLASH_GAP
+        if (this.flashOk) this.lastFlashAt = time
+      }
+      if (!this.flashOk) c.flash = 0
+    } else this.flashLive = false
     this.bloom.strength = c.bloomStrength
     this.bloom.radius = c.bloomRadius
     this.bloom.threshold = c.bloomThreshold

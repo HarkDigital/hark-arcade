@@ -95,9 +95,8 @@ try {
     console.log(`saved ${file}`)
   }
 } finally {
-  await browser.close()
+  // close() can hang when two headless Chromes run at once: don't wait forever
+  await Promise.race([browser.close(), new Promise(r => setTimeout(r, 3000))])
 }
-if (errors.length) {
-  console.log(`\n${errors.length} console error(s)`)
-  process.exit(1)
-}
+if (errors.length) console.log(`\n${errors.length} console error(s)`)
+process.exit(errors.length ? 1 : 0)

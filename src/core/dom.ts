@@ -48,6 +48,13 @@ export class Callout {
   private dot: HTMLDivElement
   side: 'left' | 'right'
   offset: { x: number; y: number }
+  /**
+   * Keep the label's row inside [minY, maxY] (CSS px from the top), e.g. below
+   * a HUD strip. When the preferred row would cross minY/maxY the elbow flips
+   * to the other vertical side of the point instead.
+   */
+  minY = -Infinity
+  maxY = Infinity
   private lw = 0
 
   constructor(
@@ -91,7 +98,13 @@ export class Callout {
     else if (side === 'left' && x - this.offset.x - 8 - lw < margin) side = 'right'
     const dx = side === 'right' ? this.offset.x : -this.offset.x
     const lx = x + dx
-    const ly = y + this.offset.y
+    let ly = y + this.offset.y
+    if (ly - 10 < this.minY || ly + 14 > this.maxY) {
+      // flip above/below the point, then clamp as a last resort
+      const flipped = y - this.offset.y
+      if (flipped - 10 >= this.minY && flipped + 14 <= this.maxY) ly = flipped
+      else ly = Math.min(this.maxY - 14, Math.max(this.minY + 10, ly))
+    }
     const elbow = x + dx * 0.35
     // offsets computed by chapters before first layout can be NaN — never write them
     if (!Number.isFinite(lx + ly + elbow + lw)) {

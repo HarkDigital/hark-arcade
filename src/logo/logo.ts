@@ -38,6 +38,61 @@ function parse(svg: string, minSize: number) {
   return groups
 }
 
+/**
+ * Ramer–Douglas–Peucker on a closed polyline: drops points that sit within
+ * `eps` of the simplified outline. The SVG outlines arrive as ~5,200 tiny
+ * line segments; at 1u tall, eps 0.0012 is far below one game pixel, keeps
+ * every corner, and cuts the extrusion from ~104k to a few thousand triangles.
+ */
+function simplify(pts: THREE.Vector2[], eps: number): THREE.Vector2[] {
+  if (pts.length > 1 && pts[0].distanceTo(pts[pts.length - 1]) < 1e-9) pts = pts.slice(0, -1)
+  if (pts.length < 8) return pts
+  // split the ring at its two most distant points so both halves are open runs
+  let far = 0
+  let best = -1
+  for (let i = 1; i < pts.length; i++) {
+    const d = pts[i].distanceToSquared(pts[0])
+    if (d > best) {
+      best = d
+      far = i
+    }
+  }
+  const keep = new Uint8Array(pts.length)
+  keep[0] = keep[far] = 1
+  const stack: [number, number][] = [
+    [0, far],
+    [far, pts.length],
+  ]
+  const eps2 = eps * eps
+  while (stack.length) {
+    const [a, b] = stack.pop()!
+    const pa = pts[a]
+    const pb = pts[b % pts.length]
+    const dx = pb.x - pa.x
+    const dy = pb.y - pa.y
+    const len2 = dx * dx + dy * dy || 1e-12
+    let idx = -1
+    let dmax = eps2
+    for (let i = a + 1; i < b; i++) {
+      const t = Math.max(0, Math.min(1, ((pts[i].x - pa.x) * dx + (pts[i].y - pa.y) * dy) / len2))
+      const ex = pa.x + dx * t - pts[i].x
+      const ey = pa.y + dy * t - pts[i].y
+      const d = ex * ex + ey * ey
+      if (d > dmax) {
+        dmax = d
+        idx = i
+      }
+    }
+    if (idx >= 0) {
+      keep[idx] = 1
+      stack.push([a, idx], [idx, b])
+    }
+  }
+  return pts.filter((_, i) => keep[i])
+}
+
+const SIMPLIFY_EPS = 0.0012
+
 /** Normalize shape groups in-place: center on (cx, cy), scale, flip y. */
 function normalize(groups: THREE.Shape[][], cx: number, cy: number, scale: number) {
   const tx = (v: THREE.Vector2) => v.set((v.x - cx) * scale, -(v.y - cy) * scale)
@@ -46,11 +101,17 @@ function normalize(groups: THREE.Shape[][], cx: number, cy: number, scale: numbe
     const gOut: THREE.Shape[] = []
     for (const s of g) {
       // rebuild from discretized points so the flip doesn't break winding logic
-      const pts = s.getPoints(48).map(p => tx(p.clone()))
+      const pts = simplify(
+        s.getPoints(48).map(p => tx(p.clone())),
+        SIMPLIFY_EPS,
+      )
       if (THREE.ShapeUtils.isClockWise(pts)) pts.reverse()
       const shape = new THREE.Shape(pts)
       for (const h of s.holes) {
-        const hp = h.getPoints(48).map(p => tx(p.clone()))
+        const hp = simplify(
+          h.getPoints(48).map(p => tx(p.clone())),
+          SIMPLIFY_EPS,
+        )
         if (!THREE.ShapeUtils.isClockWise(hp)) hp.reverse()
         shape.holes.push(new THREE.Path(hp))
       }
@@ -115,7 +176,8 @@ export function logoGeometry(opts: LogoGeometryOptions = {}): THREE.BufferGeomet
     bevelEnabled: bevel,
     bevelSize,
     bevelThickness,
-    bevelSegments: bevel ? 4 : 0,
+    // 2 bevel steps: toon shading + 3–4 px pixelation can't show more
+    bevelSegments: bevel ? 2 : 0,
     curveSegments,
     steps: 1,
   })
@@ -226,15 +288,32 @@ export function logoOutlinePoints(count: number, shapes = logoShapes()): Float32
 
 /** Signed-distance-ish inside test in normalized mark space (for voxelizing). */
 export function isInsideLogo(x: number, y: number, shapes = logoShapes()): boolean {
-  const p = new THREE.Vector2(x, y)
-  for (const s of shapes) {
-    if (pointInPoly(p, s.getPoints(32))) {
+  const p = _p.set(x, y)
+  for (const s of polysFor(shapes)) {
+    if (x < s.box.min.x || x > s.box.max.x || y < s.box.min.y || y > s.box.max.y) continue
+    if (pointInPoly(p, s.outer)) {
       let inHole = false
-      for (const h of s.holes) if (pointInPoly(p, h.getPoints(32))) inHole = true
+      for (const h of s.holes) if (pointInPoly(p, h)) inHole = true
       if (!inHole) return true
     }
   }
   return false
+}
+
+const _p = new THREE.Vector2()
+type Poly = { outer: THREE.Vector2[]; holes: THREE.Vector2[][]; box: THREE.Box2 }
+const _polys = new WeakMap<THREE.Shape[], Poly[]>()
+/** outline polygons per shapes array, built once (callers test thousands of points) */
+function polysFor(shapes: THREE.Shape[]): Poly[] {
+  let out = _polys.get(shapes)
+  if (!out) {
+    out = shapes.map(s => {
+      const outer = s.getPoints(32)
+      return { outer, holes: s.holes.map(h => h.getPoints(32)), box: new THREE.Box2().setFromPoints(outer) }
+    })
+    _polys.set(shapes, out)
+  }
+  return out
 }
 
 function pointInPoly(p: THREE.Vector2, poly: THREE.Vector2[]) {

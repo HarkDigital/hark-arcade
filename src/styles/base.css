@@ -8,26 +8,44 @@
    ------------------------------------------------------------------ */
 
 /* Display type: Jersey 10 (Pixelify Sans drew C like an O: "Oity Line
-   Oapital"). One static face declared across 400-700 so `font-weight: 700`
-   never triggers faux bold; size-adjust matches Pixelify's cap height so the
-   existing type scale holds. */
+   Oapital"). The files are re-emmed 1.19x (unitsPerEm 1400 → 1176, fonttools)
+   so it matches Pixelify's cap height without size-adjust, which Safari < 17
+   ignores. One static face declared across 400-700 so `font-weight: 700`
+   never triggers faux bold. */
 @font-face {
   font-family: 'Hark Pixel';
-  src: url('../assets/fonts/jersey-10-latin-400.woff2') format('woff2');
+  src: url('../assets/fonts/jersey-10-latin-400-x119.woff2') format('woff2');
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  size-adjust: 119%;
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
   font-family: 'Hark Pixel';
-  src: url('../assets/fonts/jersey-10-latin-ext-400.woff2') format('woff2');
+  src: url('../assets/fonts/jersey-10-latin-ext-400-x119.woff2') format('woff2');
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
-  size-adjust: 119%;
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Labels: Silkscreen, minus its '&', which reads as '$' ("Marketing $ PR").
+   The ampersand falls through to Jersey 10 via --font-mono's fallback. */
+@font-face {
+  font-family: 'Hark Label';
+  src: url('../assets/fonts/silkscreen-latin-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-0025, U+0027-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Hark Label';
+  src: url('../assets/fonts/silkscreen-latin-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-0025, U+0027-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 :root {
@@ -56,13 +74,23 @@
 
   --font-display: 'Hark Pixel', monospace;
   --font-sans: 'VT323', ui-monospace, monospace;
-  --font-mono: 'Silkscreen', ui-monospace, monospace;
+  --font-mono: 'Hark Label', 'Hark Pixel', ui-monospace, monospace;
 
   --gutter: max(clamp(16px, 3.4vw, 48px), env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
   --safe-top: calc(clamp(80px, 10.5vh, 112px) + env(safe-area-inset-top, 0px));
   --safe-bottom: calc(clamp(82px, 10.5vh, 110px) + env(safe-area-inset-bottom, 0px));
 
   color-scheme: dark;
+}
+
+/* Short landscape (a phone turned sideways after 'Continue anyway'): thin
+   chrome bands so the windows between them have room. Chrome and chapters
+   collapse their secondary bits under the same query. */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root {
+    --safe-top: calc(56px + env(safe-area-inset-top, 0px));
+    --safe-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 *,
@@ -490,16 +518,20 @@ a {
 .sr-copy :is(a, button) {
   pointer-events: auto;
 }
+/* The focus pill sits at the TOP: every level's dialogue windows, cards and
+   tracks live at the bottom, and a bottom pill covered the very content it
+   pointed to. It wraps instead of truncating long names. */
 .sr-copy :is(a, button):focus {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 8px);
+  top: calc(var(--safe-top) + 8px);
   transform: translateX(-50%);
   z-index: 40;
-  max-width: calc(100vw - 2 * var(--gutter));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  width: max-content;
+  max-width: min(560px, calc(100vw - 2 * var(--gutter)));
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.08em;
@@ -507,11 +539,13 @@ a {
   text-decoration: none;
   color: var(--void);
   background: var(--signal);
-  padding: 12px 18px;
-  border-radius: 999px;
+  padding: 10px 16px;
+  border: 2px solid var(--void);
+  border-radius: 4px;
   box-shadow: 4px 4px 0 var(--void);
-  outline: 3px solid var(--signal);
-  outline-offset: 3px;
+  /* cream ring outside a void border: holds 3:1 on green levels too */
+  outline: 3px solid var(--cream);
+  outline-offset: 0;
 }
 .sr-copy :is(a, button):focus .sr-note {
   display: none;
@@ -519,11 +553,15 @@ a {
 .sr-copy :is(h1, h2):focus {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 8px);
+  top: calc(var(--safe-top) + 8px);
   transform: translateX(-50%);
   z-index: 40;
   margin: 0;
-  white-space: nowrap;
+  width: max-content;
+  max-width: min(560px, calc(100vw - 2 * var(--gutter)));
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
   font: 500 12px/1 var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -537,7 +575,7 @@ a {
 .sr-copy [data-copy-status]:not(:empty) {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 64px);
+  top: calc(var(--safe-top) + 72px);
   transform: translateX(-50%);
   z-index: 40;
   font: 500 12px/1 var(--font-mono);

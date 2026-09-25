@@ -253,7 +253,8 @@ export default function create(): Chapter {
         reach,
         front: !introDone && revealed && it < 0.9 ? 1 : 0,
         scroll: gridScroll,
-        gamePx: pixel * ctx.renderer.getPixelRatio(),
+        // the scene renders at the post pipeline's grid scale, not the canvas DPR
+        gamePx: pixel * ctx.post.scale,
         stars: 1,
         sunScale: 1 - 0.36 * smoothstep(0.55, 0.68, local),
         sunPos: pose.sun,

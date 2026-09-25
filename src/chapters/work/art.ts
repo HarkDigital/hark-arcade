@@ -11,7 +11,7 @@ import { logoOutlines } from '../../logo/logo'
  */
 
 export const FONT_DISPLAY = "'Hark Pixel', monospace"
-export const FONT_MONO = "'Silkscreen', monospace"
+export const FONT_MONO = "'Hark Label', 'Hark Pixel', monospace"
 
 /** Cabinet colour schemes (side art, stripes, trim, marquee bands, attract screen). */
 export interface Theme {

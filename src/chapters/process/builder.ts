@@ -241,7 +241,7 @@ export function labelMesh(
   },
 ) {
   const px = o.px ?? 16
-  const fam = o.font === 'silkscreen' ? `400 ${px}px 'Silkscreen', monospace` : `700 ${px}px 'Hark Pixel', monospace`
+  const fam = o.font === 'silkscreen' ? `400 ${px}px 'Hark Label', 'Hark Pixel', monospace` : `700 ${px}px 'Hark Pixel', monospace`
   const cv = document.createElement('canvas')
   const ctx = cv.getContext('2d', { willReadFrequently: true })!
   ctx.font = fam

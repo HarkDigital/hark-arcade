@@ -1,5 +1,3 @@
-import '@fontsource/silkscreen/400.css'
-import '@fontsource/silkscreen/700.css'
 import '@fontsource/vt323/400.css'
 import './styles/base.css'
 import './ui/ui.css'
@@ -59,7 +57,9 @@ async function boot() {
   const engine = new Engine(canvas, track, stages)
   engine.assets.onProgress = (done, total) => loader.progress(total ? done / total : 0)
   // request the display face up front: canvas-drawn signs read it at init
-  if (document.fonts?.load) engine.assets.track(document.fonts.load("400 20px 'Hark Pixel'").catch(() => []))
+  if (document.fonts?.load) {
+    for (const f of ["400 20px 'Hark Pixel'", "400 10px 'Hark Label'"]) engine.assets.track(document.fonts.load(f).catch(() => []))
+  }
   if (document.fonts?.ready) engine.assets.track(document.fonts.ready)
   await engine.load(CHAPTERS, params.get('only'))
 

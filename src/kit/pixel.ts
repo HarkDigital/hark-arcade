@@ -163,7 +163,7 @@ export function pixelText(
   text: string,
   o: { color?: string; font?: 'silkscreen' | 'display'; px?: number; height?: number; glow?: number; bg?: string } = {},
 ): THREE.Mesh {
-  const fam = o.font === 'display' ? "700 FONTPX 'Hark Pixel', monospace" : "400 FONTPX 'Silkscreen', monospace"
+  const fam = o.font === 'display' ? "700 FONTPX 'Hark Pixel', monospace" : "400 FONTPX 'Hark Label', 'Hark Pixel', monospace"
   const px = o.px ?? 16
   const cv = document.createElement('canvas')
   const ctx = cv.getContext('2d')!

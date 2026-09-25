@@ -90,6 +90,12 @@ export class Engine {
   private slowFor = 0
   private fastFor = 0
   private perfCooldown = 0
+  /** after a step up: the scale we came from, and how long to watch for a relapse */
+  private upFrom = 0
+  private upWatch = 0
+  /** no stepping up past this until `ceilFor` runs out (a step up that relapsed) */
+  private dprCeil = 1
+  private ceilFor = 0
   /** time-driven cut used for long nav jumps (so we never scrub through five chapters) */
   private jump: { t: number; id: string; local: number; swapped: boolean } | null = null
   /** true while something (e.g. the rotate gate) covers the scene — skip rendering */
@@ -124,10 +130,9 @@ export class Engine {
     this.world = new World(this.scene, this.mobile)
     this.scene.add(this.world.object)
     this.assets = new Assets(this.renderer)
-    // MSAA only where it pays: 1x desktop screens. Retina is already supersampled,
-    // and multisampled half-float ping-pong targets cost ~1 GB of VRAM there.
-    const msaa = !this.mobile && (window.devicePixelRatio || 1) < 1.5
-    this.post = new Post(this.renderer, this.scene, this.camera, !msaa)
+    // finest game pixel any chapter sets (process 2.5 on phones, 3 on desktop):
+    // the scene renders at ~2 texels per game pixel of that size
+    this.post = new Post(this.renderer, this.scene, this.camera, this.mobile ? 2.5 : 3)
 
     this.frame = {
       time: 0,
@@ -410,7 +415,11 @@ export class Engine {
 
     const w = this.canvas.clientWidth || iw
     const h = this.canvas.clientHeight || ih
-    const base = Math.min(window.devicePixelRatio || 1, this.mobile ? 1.5 : 2)
+    // the canvas only carries the CRT pass now (the scene renders at grid
+    // resolution), so phones pick a ratio that divides the device's evenly
+    // and the browser's nearest-neighbour upscale stays crisp
+    const ndpr = window.devicePixelRatio || 1
+    const base = this.mobile ? (ndpr >= 2 ? ndpr / 2 : 1) : Math.min(ndpr, 2)
     const budget = Math.sqrt(PIXEL_BUDGET / Math.max(1, w * h))
     const dpr = Math.max(this.mobile ? 1 : 0.75, Math.min(base, budget) * this.dprScale)
     if (!force && w === this.cw && h === this.ch && Math.abs(dpr - this.dpr) < 1e-3) return
@@ -419,6 +428,9 @@ export class Engine {
     this.dpr = dpr
     this.renderer.setPixelRatio(dpr)
     this.renderer.setSize(w, h, false)
+    // integer upscales go nearest-neighbour (crisp game pixels); others stay smooth
+    const ratio = ndpr / dpr
+    this.canvas.style.imageRendering = Math.abs(ratio - Math.round(ratio)) < 0.01 && ratio > 1.01 ? 'pixelated' : ''
     this.post.setSize(w, h, dpr)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
@@ -516,17 +528,38 @@ export class Engine {
     }
     this.perfEma += (raw - this.perfEma) * 0.05
     this.perfCooldown -= dt
-    const slow = this.perfEma > Math.max(this.baseline * 1.35, 1 / 50)
+    this.ceilFor -= dt
+    if (this.ceilFor <= 0) this.dprCeil = 1
+    // a step up that pushes frames past the cadence again is reverted at once
+    // and capped for a minute (otherwise it can settle at ~48 fps, between
+    // the slow and fast thresholds)
+    if (this.upWatch > 0) {
+      this.upWatch -= dt
+      if (this.upWatch < 2.5 && this.perfEma > this.baseline * 1.12) {
+        this.dprCeil = this.upFrom
+        this.ceilFor = 60
+        this.dprScale = this.upFrom
+        this.upWatch = 0
+        this.perfCooldown = 6
+        this.resize()
+        return
+      }
+    }
+    const slow = this.perfEma > Math.max(this.baseline * 1.2, 1 / 50)
     this.slowFor = slow ? this.slowFor + dt : 0
     this.fastFor = this.perfEma < this.baseline * 1.08 ? this.fastFor + dt : 0
     if (this.slowFor > 1.5 && this.dprScale > 0.5) {
       this.dprScale = Math.max(0.5, this.dprScale - 0.15)
       this.slowFor = 0
+      this.upWatch = 0
       this.perfCooldown = 6
       this.resize()
-    } else if (this.fastFor > 8 && this.dprScale < 1 && this.perfCooldown <= 0) {
-      this.dprScale = Math.min(1, this.dprScale + 0.1)
+    } else if (this.fastFor > 8 && this.dprScale < Math.min(1, this.dprCeil) && this.perfCooldown <= 0) {
+      this.upFrom = this.dprScale
+      this.dprScale = Math.min(1, this.dprCeil, this.dprScale + 0.1)
       this.fastFor = 0
+      this.upWatch = 3
+      this.perfEma = this.baseline
       this.resize()
     }
   }
